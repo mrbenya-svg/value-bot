@@ -13,10 +13,10 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 
-MIN_EV = 3.0         # Зменшив поки для тестів до +3%, щоб легше чіпляло варіанти
+MIN_EV = 5.0         
 MAX_EV = 30.0        
-MIN_ODDS = 1.30      
-MAX_ODDS = 4.00      
+MIN_ODDS = 1.60      
+MAX_ODDS = 3.60      
 
 REGIONS = "eu"       
 ALERT_COOLDOWN = 43200  # 12 годин блокування матчу після аларму
