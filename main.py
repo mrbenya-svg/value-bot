@@ -24,14 +24,34 @@ sent_alerts = {}
 
 LEAGUES = [
     "soccer_epl",
+    "soccer_england_league1",
+    "soccer_england_league2",
+    "soccer_england_efl_cup",
+    "soccer_fa_cup",
     "soccer_spain_la_liga",
+    "soccer_spain_segunda_division",
     "soccer_italy_serie_a",
+    "soccer_italy_serie_b",
     "soccer_germany_bundesliga",
+    "soccer_germany_bundesliga2", 
     "soccer_france_lique_one",
+    "soccer_france_lique_two",
     "soccer_uefa_champs_league",
     "soccer_uefa_europa_league",
+    "soccer_uefa_europa_conference_league",
+    "soccer_uefa_nations_league",
     "soccer_netherlands_eredivisie",
-    "soccer_portugal_primeira_liga"
+    "soccer_portugal_primeira_liga",
+    "soccer_belgium_first_div",
+    "soccer_turkey_super_league",
+      "soccer_austria_bundesliga",
+    "soccer_switzerland_superleague",
+    "soccer_denmark_superliga",
+    "soccer_norway_eliteserien",
+    "soccer_greece_super_league",
+    "soccer_czech_republic_first_league",
+    "soccer_argentina_primera_division",
+    "soccer_brazil_campeonato"
 ]
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
