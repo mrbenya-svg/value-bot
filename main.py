@@ -4,10 +4,8 @@ import asyncio
 import requests
 from flask import Flask
 from threading import Thread
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# === НАЛАШТУВАННЯ ТА КЛЮЧІ ===
+# === НАЛАШТУВАННЯ ТА КЛЮЧІ З ЗМІННИХ СЕРЕДОВИЩА ===
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
@@ -28,7 +26,7 @@ LEAGUES = [
     "soccer_italy_serie_a", "soccer_italy_serie_b",
     "soccer_germany_bundesliga", "soccer_germany_bundesliga2", "soccer_germany_3liga",
     "soccer_france_lique_one", "soccer_france_lique_two",
-    # Європа (Лігаційні та Кубкові)
+    # Європа
     "soccer_netherlands_eredivisie", "soccer_netherlands_eerste_divisie",
     "soccer_portugal_primeira_liga", "soccer_portugal_liga2",
     "soccer_belgium_first_div",
@@ -52,7 +50,7 @@ LEAGUES = [
     "soccer_latvia_virsliga",
     "soccer_lithuania_a_lyga",
     "soccer_bulgaria_first_league",
-    # Південна Америка та Латинська Америка
+    # Південна та Латинська Америка
     "soccer_argentina_primera_division", "soccer_argentina_primera_b",
     "soccer_brazil_campeonato", "soccer_brazil_serie_b", "soccer_brazil_serie_c",
     "soccer_chile_camp_nacional", "soccer_chile_primera_b",
@@ -63,14 +61,13 @@ LEAGUES = [
     "soccer_uruguay_primera_division", "soccer_uruguay_segunda_division",
     "soccer_mexico_ligamx",
     "soccer_conmebol_copa_libertadores", "soccer_conmebol_copa_sudamericana",
-    # Північна Америка, Азія, Африка
+    # Інші регіони та Міжнародні
     "soccer_usa_mls",
     "soccer_saudi_prof_league",
     "soccer_japan_j_league",
     "soccer_korea_kleague1",
     "soccer_australia_aleague",
     "soccer_morocco_botola_pro",
-    # Міжнародні турніри та відбори
     "soccer_uefa_champs_league", "soccer_uefa_europa_league", "soccer_uefa_europa_conference_league",
     "soccer_uefa_nations_league", "soccer_fifa_world_cup", "soccer_uefa_european_championship",
     "soccer_fifa_world_cup_qualifiers", "soccer_uefa_euro_qualifiers"
@@ -94,8 +91,31 @@ def keep_alive():
     t.daemon = True
     t.start()
 
-# === ЛОГІКА СУАННЯ ТА РОЗРАХУНКУ EV ===
+# === ВІДПРАВКА ПОВІДОМЛЕНЬ В TELEGRAM ===
+def send_telegram_message(text):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logging.error("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID environment variable is missing!")
+        return
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML"
+    }
+    try:
+        res = requests.post(url, json=payload, timeout=10)
+        if res.status_code != 200:
+            logging.error(f"Failed to send Telegram msg: {res.text}")
+    except Exception as e:
+        logging.error(f"Error sending Telegram message: {e}")
+
+# === СКАНУВАННЯ МАТЧІВ ===
 def check_value_bets():
+    if not ODDS_API_KEY:
+        logging.error("ODDS_API_KEY is missing!")
+        return []
+
     signals = []
     
     for league in LEAGUES:
@@ -159,31 +179,18 @@ def check_value_bets():
 
     return signals
 
-# === TELEGRAM БОТ ===
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привіт! Сканер валуїв запущений і працює.")
-
-async def scan_task(app_bot):
+async def main_loop():
+    send_telegram_message("🤖 <b>Сканер валуїв успішно запущений і працює!</b>")
     while True:
         try:
             signals = check_value_bets()
             for sig in signals:
-                await app_bot.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=sig, parse_mode='HTML')
+                send_telegram_message(sig)
         except Exception as e:
-            logging.error(f"Error in scan loop: {e}")
+            logging.error(f"Error in main loop: {e}")
         
-        await asyncio.sleep(300)  # Перевірка кожні 5 хвилин
-
-async def post_init(application):
-    asyncio.create_task(scan_task(application))
-
-def main():
-    keep_alive()  # Запуск веб-сервера
-    
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
-    application.add_handler(CommandHandler("start", start))
-    
-    application.run_polling()
+        await asyncio.sleep(300)
 
 if __name__ == '__main__':
-    main()
+    keep_alive()
+    asyncio.run(main_loop())
