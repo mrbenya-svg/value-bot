@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+import time
 import requests
 from flask import Flask
 from threading import Thread
@@ -17,6 +18,10 @@ MAX_ODDS = 3.20
 
 MARKETS = "h2h,spreads,totals"
 REGIONS = "eu,uk"
+
+# Кулдаун для одного матчу: 6 годин (21600 секунд)
+ALERT_COOLDOWN = 21600  
+sent_alerts = {}
 
 LEAGUES = [
     # Англія
@@ -94,7 +99,7 @@ def keep_alive():
 # === ВІДПРАВКА ПОВІДОМЛЕНЬ В TELEGRAM ===
 def send_telegram_message(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        logging.error("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID environment variable is missing!")
+        logging.error("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID missing!")
         return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -104,19 +109,23 @@ def send_telegram_message(text):
         "parse_mode": "HTML"
     }
     try:
-        res = requests.post(url, json=payload, timeout=10)
-        if res.status_code != 200:
-            logging.error(f"Failed to send Telegram msg: {res.text}")
+        requests.post(url, json=payload, timeout=10)
     except Exception as e:
         logging.error(f"Error sending Telegram message: {e}")
 
-# === СКАНУВАННЯ МАТЧІВ ===
+# === СКАНУВАННЯ МАТЧІВ З ЗАХИСТОМ ВІД ДУБЛІВ ===
 def check_value_bets():
     if not ODDS_API_KEY:
         logging.error("ODDS_API_KEY is missing!")
         return []
 
     signals = []
+    current_time = time.time()
+
+    # Очищення старих записів із пам'яті
+    expired_keys = [k for k, v in sent_alerts.items() if current_time - v > ALERT_COOLDOWN]
+    for k in expired_keys:
+        del sent_alerts[k]
     
     for league in LEAGUES:
         url = f"https://api.the-odds-api.com/v4/sports/{league}/odds/?apiKey={ODDS_API_KEY}&regions={REGIONS}&markets={MARKETS}"
@@ -131,6 +140,7 @@ def check_value_bets():
             continue
 
         for match in data:
+            match_id = match.get('id')
             home = match.get('home_team')
             away = match.get('away_team')
             bookmakers = match.get('bookmakers', [])
@@ -162,6 +172,13 @@ def check_value_bets():
                 ev = (max_price * fair_prob - 1) * 100
 
                 if MIN_EV <= ev <= MAX_EV and MIN_ODDS <= max_price <= MAX_ODDS:
+                    # Унікальний ключ для конкретної ставки (матч + маркет + вихід)
+                    alert_key = f"{match_id}_{m_key}_{name}_{point}"
+
+                    # Перевіряємо, чи не відправляли вже цей алерт
+                    if alert_key in sent_alerts:
+                        continue
+
                     best_bookies = [p[0] for p in prices if p[1] == max_price]
                     point_str = f" ({point})" if point != '' else ""
                     
@@ -176,11 +193,12 @@ def check_value_bets():
                         f"🏦 <b>Букмекери:</b> {', '.join(best_bookies)}"
                     )
                     signals.append(msg)
+                    sent_alerts[alert_key] = current_time
 
     return signals
 
 async def main_loop():
-    send_telegram_message("🤖 <b>Сканер валуїв успішно запущений і працює!</b>")
+    send_telegram_message("🤖 <b>Сканер валуїв оновлено: фільтрація дублів активована!</b>")
     while True:
         try:
             signals = check_value_bets()
