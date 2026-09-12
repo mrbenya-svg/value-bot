@@ -1,17 +1,21 @@
 import os
 import logging
-import asyncio
-import time
 import math
 import requests
 from datetime import datetime, timezone, timedelta
 from flask import Flask
 from threading import Thread
+import telebot
 
 # === НАЛАШТУВАННЯ ТА КЛЮЧІ ===
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
+
+if not TELEGRAM_BOT_TOKEN:
+    logging.error("TELEGRAM_BOT_TOKEN is missing!")
+
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
 MIN_EV = 5.0         # Мінімальна перевага +5%
 MAX_EV = 25.0        # Максимальна перевага
@@ -21,13 +25,10 @@ MAX_ODDS = 3.50      # Максимальний кф
 MARKETS = "h2h"      # Основні результати (П1, X, П2)
 REGIONS = "eu"       # Європейські БК
 
-ALERT_COOLDOWN = 43200  # 12 годин кулдауну для матчу
-sent_alerts = {}
-
-# === СПИСОК ЛІГ ===
+# === СПИСОК ЛІГ (з Чемпіоншипом) ===
 LEAGUES = [
     "soccer_epl",
-    "soccer_england_championship", # <-- додали Чемпіоншип
+    "soccer_england_championship",
     "soccer_england_league1",
     "soccer_england_league2",
     "soccer_england_efl_cup",
@@ -48,7 +49,6 @@ LEAGUES = [
     "soccer_belgium_first_div",
     "soccer_turkey_super_league",
     "soccer_austria_bundesliga",
-
 ]
 
 logging.basicConfig(level=logging.INFO)
@@ -56,7 +56,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Poisson xG Value Bot is running!"
+    return "Poisson Manual Value Bot is running!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
@@ -70,14 +70,8 @@ def keep_alive():
 def send_telegram_message(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-        "parse_mode": "HTML"
-    }
     try:
-        requests.post(url, json=payload, timeout=10)
+        bot.send_message(TELEGRAM_CHAT_ID, text, parse_mode="HTML")
     except Exception as e:
         logging.error(f"Error sending message: {e}")
 
@@ -106,7 +100,6 @@ def calculate_match_probabilities(xg_home, xg_away):
             else:
                 p_away += prob
 
-    # Нормалізація на випадок обрізання матриці на 6 голах
     total = p_home + p_draw + p_away
     if total > 0:
         p_home /= total
@@ -116,12 +109,8 @@ def calculate_match_probabilities(xg_home, xg_away):
     return p_home, p_draw, p_away
 
 def estimate_xg_from_market(avg_home_odds, avg_away_odds):
-    """
-    Конвертація ринкового консенсусу в базові xG, 
-    якщо зовнішнє стат-джерело недоступне для конкретної ліги.
-    """
-    # Базові коефіцієнти конвертуються в очікувані голи через середню результативність
-    base_goals = 2.75 # середня кількість голів за матч у топ-лігах
+    """Конвертація ринкового консенсусу в базові xG"""
+    base_goals = 2.75 
     implied_home_prob = 1.0 / avg_home_odds if avg_home_odds > 0 else 0.33
     implied_away_prob = 1.0 / avg_away_odds if avg_away_odds > 0 else 0.33
     
@@ -129,32 +118,31 @@ def estimate_xg_from_market(avg_home_odds, avg_away_odds):
     if total_implied == 0:
         return 1.4, 1.1
 
-    xg_home = (implied_home_prob / total_implied) * base_goals * 1.15  фактор поля
+    xg_home = (implied_home_prob / total_implied) * base_goals * 1.15
     xg_away = (implied_away_prob / total_implied) * base_goals * 0.85
     
     return max(0.5, round(xg_home, 2)), max(0.4, round(xg_away, 2))
 
-# === СКАНЕР ВАЛУЇВ ===
+# === ЛОГІКА СКАНУВАННЯ ЗА ЗАПИТОМ ===
 
-def check_value_bets():
+def run_manual_scan():
     if not ODDS_API_KEY:
-        return []
+        send_telegram_message("❌ <b>Помилка:</b> Відсутній ODDS_API_KEY!")
+        return
 
+    send_telegram_message("🔍 <b>Запущено ручне сканування ліг (Poisson xG модель)...</b> Будь ласка, зачекайте.")
+    
     signals = []
-    current_time = time.time()
-
-    expired_keys = [k for k, v in sent_alerts.items() if current_time - v > ALERT_COOLDOWN]
-    for k in expired_keys:
-        del sent_alerts[k]
-     
     now_utc = datetime.now(timezone.utc)
     max_time_utc = now_utc + timedelta(hours=48)
+    requests_made = 0
 
     for league in LEAGUES:
         url = f"https://api.the-odds-api.com/v4/sports/{league}/odds/?apiKey={ODDS_API_KEY}&regions={REGIONS}&markets={MARKETS}"
         
         try:
             res = requests.get(url, timeout=10)
+            requests_made += 1
             if res.status_code != 200:
                 continue
             data = res.json()
@@ -163,10 +151,6 @@ def check_value_bets():
             continue
 
         for match in data:
-            match_id = match.get('id')
-            if match_id in sent_alerts:
-                continue
-
             commence_time_str = match.get('commence_time')
             if not commence_time_str:
                 continue
@@ -188,29 +172,25 @@ def check_value_bets():
             market_outcomes = {}
             for bm in bookmakers:
                 for mk in bm.get('markets', []):
-                    m_key = mk.get('key')
                     for out in mk.get('outcomes', []):
                         name = out.get('name')
                         price = out.get('price')
                         point = out.get('point', '')
                         
-                        outcome_key = (m_key, name, point)
+                        outcome_key = (mk.get('key'), name, point)
                         if outcome_key not in market_outcomes:
                             market_outcomes[outcome_key] = []
                         market_outcomes[outcome_key].append((bm['title'], price))
 
-            # Спочатку зберемо середні ринкові ціни для П1, Х, П2 щоб оцінити xG матчу
             h_prices = [p[1] for k, prices in market_outcomes.items() for p in prices if k[1] == home]
             a_prices = [p[1] for k, prices in market_outcomes.items() for p in prices if k[1] == away]
             
             avg_h = sum(h_prices) / len(h_prices) if h_prices else 2.5
             avg_a = sum(a_prices) / len(a_prices) if a_prices else 3.0
 
-            # Генеруємо xG та рахуємо ймовірності за Пуассоном
             xg_h, xg_a = estimate_xg_from_market(avg_h, avg_a)
             p_home, p_draw, p_away = calculate_match_probabilities(xg_h, xg_a)
 
-            # Мапа модельних ймовірностей для кожного результату
             model_probs = {
                 home: p_home,
                 "Draw": p_draw,
@@ -227,12 +207,10 @@ def check_value_bets():
                 all_odds = [p[1] for p in prices]
                 max_price = max(all_odds)
                 
-                # Отримуємо модельну ймовірність для цього конкретного результату
                 model_prob = model_probs.get(name, 0)
                 if model_prob <= 0:
                     continue
 
-                # Розрахунок Expected Value (EV) на основі моделі Пуассона
                 ev = (max_price * model_prob - 1) * 100
                 fair_odds = round(1.0 / model_prob, 2) if model_prob > 0 else 0
 
@@ -256,22 +234,33 @@ def check_value_bets():
 
             if best_match_signal:
                 signals.append(best_match_signal)
-                sent_alerts[match_id] = current_time
 
-    return signals
+    # Відправляємо результати
+    if signals:
+        for sig in signals:
+            send_telegram_message(sig)
+        send_telegram_message(f"✅ <b>Сканування завершено!</b> Знайдено валуїв: {len(signals)}. Використано запитів API: {requests_made}")
+    else:
+        send_telegram_message(f"📭 <b>Сканування завершено.</b> Наразі валуїв за вашими критеріями не знайдено. (Використано запитів API: {requests_made})")
 
-async def main_loop():
-    send_telegram_message("⚙️ <b>Бот оновлений на математичну модель Пуассона (xG & Poisson Distribution)!</b>")
-    while True:
-        try:
-            signals = check_value_bets()
-            for sig in signals:
-                send_telegram_message(sig)
-        except Exception as e:
-            logging.error(f"Error in main loop: {e}")
-        
-        await asyncio.sleep(900)
+# === ОБРОБНИК TELEGRAM КОМАНД ===
+
+@bot.message_handler(commands=['scan'])
+def handle_scan_command(message):
+    # Можна додати перевірку на твій власний chat_id, якщо треба безпека
+    if str(message.chat.id) != str(TELEGRAM_CHAT_ID):
+        return
+    # Запускаємо сканування в окремому потоці, щоб не блокувати бота
+    t = Thread(target=run_manual_scan)
+    t.start()
+
+@bot.message_handler(commands=['start'])
+def handle_start(message):
+    send_telegram_message("🤖 <b>Бот готовий до роботи у ручному режимі.</b>\nНапиши /scan, щоб запустити перевірку ліній.")
 
 if __name__ == '__main__':
-    keep_alive()
-    asyncio.run(main_loop())
+    keep_alive()  # Підтримка вебсервера для Render
+    
+    # Запуск телеграм-бота в режимі постійного прослуховування команд (long polling)
+    # Він не робить запити до The Odds API поки ти не відправиш /scan!
+    bot.infinity_polling()
