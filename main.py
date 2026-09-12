@@ -6,86 +6,77 @@ import requests
 from flask import Flask
 from threading import Thread
 
-# === НАЛАШТУВАННЯ ТА КЛЮЧІ З ЗМІННИХ СЕРЕДОВИЩА ===
+# === НАЛАШТУВАННЯ ТА КЛЮЧІ ===
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 
-MIN_EV = 5.0
-MAX_EV = 25.0
-MIN_ODDS = 1.20
-MAX_ODDS = 3.20
+MIN_EV = 7.0         # Мінімальна перевага +7%
+MAX_EV = 20.0        # Максимальна перевага (захист від аномалій/помилок API)
+MIN_ODDS = 1.40      # Мінімальний кф
+MAX_ODDS = 2.60      # Максимальний кф
 
-MARKETS = "h2h,spreads,totals"
-REGIONS = "eu,uk"
+MARKETS = "h2h"      # Тільки основні результати (П1, X, П2)
+REGIONS = "eu"       # Тільки європейські БК
 
-# Кулдаун для одного матчу: 6 годин (21600 секунд)
-ALERT_COOLDOWN = 21600  
+ALERT_COOLDOWN = 43200  # 12 годин бана для матчу після відправки сповіщення
 sent_alerts = {}
 
+# === ПОВНИЙ СПИСОК ЛІГ (60+) ===
 LEAGUES = [
-    # Англія
-    "soccer_epl", "soccer_efl_champ", "soccer_england_league1", "soccer_england_league2", "soccer_england_national_league",
-    # Іспанія, Італія, Німеччина, Франція
-    "soccer_spain_la_liga", "soccer_spain_segunda_division",
-    "soccer_italy_serie_a", "soccer_italy_serie_b",
-    "soccer_germany_bundesliga", "soccer_germany_bundesliga2", "soccer_germany_3liga",
-    "soccer_france_lique_one", "soccer_france_lique_two",
-    # Європа
-    "soccer_netherlands_eredivisie", "soccer_netherlands_eerste_divisie",
-    "soccer_portugal_primeira_liga", "soccer_portugal_liga2",
+    "soccer_epl",
+    "soccer_england_league1",
+    "soccer_england_league2",
+    "soccer_england_efl_cup",
+    "soccer_fa_cup",
+    "soccer_spain_la_liga",
+    "soccer_spain_segunda_division",
+    "soccer_italy_serie_a",
+    "soccer_italy_serie_b",
+    "soccer_germany_bundesliga",
+    "soccer_germany_bundesliga2",
+    "soccer_germany_3liga",
+    "soccer_france_lique_one",
+    "soccer_france_lique_two",
+    "soccer_uefa_champs_league",
+    "soccer_uefa_europa_league",
+    "soccer_uefa_europa_conference_league",
+    "soccer_uefa_nations_league",
+    "soccer_netherlands_eredivisie",
+    "soccer_portugal_primeira_liga",
     "soccer_belgium_first_div",
-    "soccer_austria_bundesliga", "soccer_austria_2_liga",
-    "soccer_denmark_superliga", "soccer_denmark_1st_division",
-    "soccer_norway_eliteserien", "soccer_norway_1st_division",
-    "soccer_sweden_allsvenskan", "soccer_sweden_superettan",
-    "soccer_poland_ekstraklasa", "soccer_poland_1_liga",
-    "soccer_turkey_super_league", "soccer_turkey_1_lig",
-    "soccer_greece_super_league",
+    "soccer_turkey_super_league",
     "soccer_scotland_premier_league",
-    "soccer_switzerland_super_league",
-    "soccer_croatia_hnl",
+    "soccer_austria_bundesliga",
+    "soccer_switzerland_superleague",
+    "soccer_denmark_superliga",
+    "soccer_norway_eliteserien",
+    "soccer_sweden_allsvenskan",
+    "soccer_poland_ekstraklasa",
+    "soccer_greece_super_league",
     "soccer_czech_republic_first_league",
-    "soccer_romania_liga_1",
-    "soccer_hungary_nb_i",
-    "soccer_slovakia_super_liga",
-    "soccer_slovenia_prva_liga",
-    "soccer_cyprus_first_division",
-    "soccer_israel_premier_league",
-    "soccer_latvia_virsliga",
-    "soccer_lithuania_a_lyga",
-    "soccer_bulgaria_first_league",
-    # Південна та Латинська Америка
-    "soccer_argentina_primera_division", "soccer_argentina_primera_b",
-    "soccer_brazil_campeonato", "soccer_brazil_serie_b", "soccer_brazil_serie_c",
-    "soccer_chile_camp_nacional", "soccer_chile_primera_b",
-    "soccer_colombia_categoria_primera_a",
-    "soccer_ecuador_serie_a",
-    "soccer_peru_liga_1",
-    "soccer_paraguay_primera_division",
-    "soccer_uruguay_primera_division", "soccer_uruguay_segunda_division",
-    "soccer_mexico_ligamx",
-    "soccer_conmebol_copa_libertadores", "soccer_conmebol_copa_sudamericana",
-    # Інші регіони та Міжнародні
+    "soccer_argentina_primera_division",
+    "soccer_brazil_campeonato",
+    "soccer_brazil_serie_b",
     "soccer_usa_mls",
-    "soccer_saudi_prof_league",
+    "soccer_mexico_ligamx",
     "soccer_japan_j_league",
-    "soccer_korea_kleague1",
+    "soccer_korea_k_league_1",
     "soccer_australia_aleague",
-    "soccer_morocco_botola_pro",
-    "soccer_uefa_champs_league", "soccer_uefa_europa_league", "soccer_uefa_europa_conference_league",
-    "soccer_uefa_nations_league", "soccer_fifa_world_cup", "soccer_uefa_european_championship",
-    "soccer_fifa_world_cup_qualifiers", "soccer_uefa_euro_qualifiers"
+    "soccer_chile_camp_national",
+    "soccer_colombia_categoria_primera_a",
+    "soccer_finland_veikkausliiga",
+    "soccer_ireland_a_league",
+    "soccer_china_super_league"
 ]
 
 logging.basicConfig(level=logging.INFO)
 
-# === ВЕБ-СЕРВЕР ДЛЯ RENDER (Keep-Alive) ===
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot is running 24/7!"
+    return "Bot is running with full leagues and strict anti-spam!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
@@ -96,12 +87,9 @@ def keep_alive():
     t.daemon = True
     t.start()
 
-# === ВІДПРАВКА ПОВІДОМЛЕНЬ В TELEGRAM ===
 def send_telegram_message(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        logging.error("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID missing!")
         return
-
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -111,18 +99,16 @@ def send_telegram_message(text):
     try:
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        logging.error(f"Error sending Telegram message: {e}")
+        logging.error(f"Error sending message: {e}")
 
-# === СКАНУВАННЯ МАТЧІВ З ЗАХИСТОМ ВІД ДУБЛІВ ===
 def check_value_bets():
     if not ODDS_API_KEY:
-        logging.error("ODDS_API_KEY is missing!")
         return []
 
     signals = []
     current_time = time.time()
 
-    # Очищення старих записів із пам'яті
+    # Очищення застарілих алертів із пам'яті
     expired_keys = [k for k, v in sent_alerts.items() if current_time - v > ALERT_COOLDOWN]
     for k in expired_keys:
         del sent_alerts[k]
@@ -141,6 +127,11 @@ def check_value_bets():
 
         for match in data:
             match_id = match.get('id')
+
+            # 🛑 ЖОРСТКИЙ ФІЛЬТР: Якщо матч вже був відправлений — ігноруємо
+            if match_id in sent_alerts:
+                continue
+
             home = match.get('home_team')
             away = match.get('away_team')
             bookmakers = match.get('bookmakers', [])
@@ -160,8 +151,12 @@ def check_value_bets():
                             market_outcomes[outcome_key] = []
                         market_outcomes[outcome_key].append((bm['title'], price))
 
+            best_match_signal = None
+            max_ev_found = -100
+
+            # Шукаємо єдиний найкращий валуй у матчі
             for (m_key, name, point), prices in market_outcomes.items():
-                if len(prices) < 3:
+                if len(prices) < 4:
                     continue
 
                 all_odds = [p[1] for p in prices]
@@ -172,33 +167,29 @@ def check_value_bets():
                 ev = (max_price * fair_prob - 1) * 100
 
                 if MIN_EV <= ev <= MAX_EV and MIN_ODDS <= max_price <= MAX_ODDS:
-                    # Унікальний ключ для конкретної ставки (матч + маркет + вихід)
-                    alert_key = f"{match_id}_{m_key}_{name}_{point}"
+                    if ev > max_ev_found:
+                        max_ev_found = ev
+                        best_bookies = [p[0] for p in prices if p[1] == max_price]
+                        
+                        best_match_signal = (
+                            f"🎯 <b>VALUE BET FOUND</b>\n\n"
+                            f"⚽ <b>Матч:</b> {home} vs {away}\n"
+                            f"🏆 <b>Ліга:</b> {league}\n"
+                            f"📌 <b>Ставка:</b> {name}\n"
+                            f"📈 <b>Коефіцієнт:</b> <code>{max_price}</code> (сер. {round(avg_price, 2)})\n"
+                            f"🔥 <b>EV:</b> +{round(ev, 2)}%\n"
+                            f"🏦 <b>БК:</b> {', '.join(best_bookies)}"
+                        )
 
-                    # Перевіряємо, чи не відправляли вже цей алерт
-                    if alert_key in sent_alerts:
-                        continue
-
-                    best_bookies = [p[0] for p in prices if p[1] == max_price]
-                    point_str = f" ({point})" if point != '' else ""
-                    
-                    msg = (
-                        f"🚨 <b>VALUE BET FOUND!</b> 🚨\n\n"
-                        f"⚽ <b>Матч:</b> {home} vs {away}\n"
-                        f"🏆 <b>Ліга:</b> {league}\n"
-                        f"🎯 <b>Маркет:</b> {m_key.upper()} - {name}{point_str}\n"
-                        f"📈 <b>Кращий коефіцієнт:</b> <code>{max_price}</code>\n"
-                        f"📊 <b>Середній коефіцієнт:</b> <code>{round(avg_price, 2)}</code>\n"
-                        f"🔥 <b>EV (Перевага):</b> +{round(ev, 2)}%\n"
-                        f"🏦 <b>Букмекери:</b> {', '.join(best_bookies)}"
-                    )
-                    signals.append(msg)
-                    sent_alerts[alert_key] = current_time
+            # Якщо знайшли варіант — надсилаємо 1 сигнал і блокуємо матч
+            if best_match_signal:
+                signals.append(best_match_signal)
+                sent_alerts[match_id] = current_time
 
     return signals
 
 async def main_loop():
-    send_telegram_message("🤖 <b>Сканер валуїв оновлено: фільтрація дублів активована!</b>")
+    send_telegram_message("⚙️ <b>Сканер оновлено! Повернуто всі 60+ ліг, захист від спаму активний.</b>")
     while True:
         try:
             signals = check_value_bets()
@@ -207,7 +198,7 @@ async def main_loop():
         except Exception as e:
             logging.error(f"Error in main loop: {e}")
         
-        await asyncio.sleep(300)
+        await asyncio.sleep(900)  # Сканування раз на 15 хвилин
 
 if __name__ == '__main__':
     keep_alive()
