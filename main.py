@@ -75,6 +75,7 @@ LEAGUES = [
     "soccer_uefa_nations_league", "soccer_fifa_world_cup", "soccer_uefa_european_championship",
     "soccer_fifa_world_cup_qualifiers", "soccer_uefa_euro_qualifiers"
 ]
+
 logging.basicConfig(level=logging.INFO)
 
 # === ВЕБ-СЕРВЕР ДЛЯ RENDER (Keep-Alive) ===
@@ -160,7 +161,7 @@ def check_value_bets():
 
 # === TELEGRAM БОТ ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привіт! Сканер валуїв запущенний і працює.")
+    await update.message.reply_text("Привіт! Сканер валуїв запущений і працює.")
 
 async def scan_task(app_bot):
     while True:
@@ -173,14 +174,14 @@ async def scan_task(app_bot):
         
         await asyncio.sleep(300)  # Перевірка кожні 5 хвилин
 
+async def post_init(application):
+    asyncio.create_task(scan_task(application))
+
 def main():
     keep_alive()  # Запуск веб-сервера
     
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
     application.add_handler(CommandHandler("start", start))
-    
-    loop = asyncio.get_event_loop()
-    loop.create_task(scan_task(application))
     
     application.run_polling()
 
