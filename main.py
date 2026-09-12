@@ -3,6 +3,7 @@ import logging
 import asyncio
 import time
 import requests
+from datetime import datetime, timezone, timedelta
 from flask import Flask
 from threading import Thread
 
@@ -12,7 +13,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 
 MIN_EV = 7.0         # Мінімальна перевага +7%
-MAX_EV = 20.0        # Максимальна перевага (захист від аномалій/помилок API)
+MAX_EV = 20.0        # Максимальна перевага (захист від аномалій)
 MIN_ODDS = 1.40      # Мінімальний кф
 MAX_ODDS = 2.60      # Максимальний кф
 
@@ -76,7 +77,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot is running with full leagues and strict anti-spam!"
+    return "Bot is running with 48h filter and datetime!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
@@ -113,6 +114,9 @@ def check_value_bets():
     for k in expired_keys:
         del sent_alerts[k]
     
+    now_utc = datetime.now(timezone.utc)
+    max_time_utc = now_utc + timedelta(hours=48)  # Вікно пошуку: максимум 48 годин вперед
+
     for league in LEAGUES:
         url = f"https://api.the-odds-api.com/v4/sports/{league}/odds/?apiKey={ODDS_API_KEY}&regions={REGIONS}&markets={MARKETS}"
         
@@ -128,8 +132,26 @@ def check_value_bets():
         for match in data:
             match_id = match.get('id')
 
-            # 🛑 ЖОРСТКИЙ ФІЛЬТР: Якщо матч вже був відправлений — ігноруємо
+            # 1. Фільтр: якщо матч вже відправляли
             if match_id in sent_alerts:
+                continue
+
+            # 2. Фільтр за часом (тільки на найближчі 48 годин)
+            commence_time_str = match.get('commence_time')
+            if not commence_time_str:
+                continue
+            
+            try:
+                match_time_utc = datetime.fromisoformat(commence_time_str.replace('Z', '+00:00'))
+                # Якщо матч вже почався або буде пізніше ніж через 48 годин — пропускаємо
+                if not (now_utc <= match_time_utc <= max_time_utc):
+                    continue
+                
+                # Конвертація у київський час (UTC+3 для вересня)
+                match_time_kyiv = match_time_utc + timedelta(hours=3)
+                formatted_time = match_time_kyiv.strftime("%d.%m о %H:%M")
+            except Exception as e:
+                logging.error(f"Error parsing date {commence_time_str}: {e}")
                 continue
 
             home = match.get('home_team')
@@ -154,7 +176,7 @@ def check_value_bets():
             best_match_signal = None
             max_ev_found = -100
 
-            # Шукаємо єдиний найкращий валуй у матчі
+            # Шукаємо найкращий валуй у матчі
             for (m_key, name, point), prices in market_outcomes.items():
                 if len(prices) < 4:
                     continue
@@ -174,6 +196,7 @@ def check_value_bets():
                         best_match_signal = (
                             f"🎯 <b>VALUE BET FOUND</b>\n\n"
                             f"⚽ <b>Матч:</b> {home} vs {away}\n"
+                            f"📅 <b>Час:</b> {formatted_time} (Кв)\n"
                             f"🏆 <b>Ліга:</b> {league}\n"
                             f"📌 <b>Ставка:</b> {name}\n"
                             f"📈 <b>Коефіцієнт:</b> <code>{max_price}</code> (сер. {round(avg_price, 2)})\n"
@@ -181,7 +204,7 @@ def check_value_bets():
                             f"🏦 <b>БК:</b> {', '.join(best_bookies)}"
                         )
 
-            # Якщо знайшли варіант — надсилаємо 1 сигнал і блокуємо матч
+            # Якщо знайшли варіант — відправляємо 1 сигнал і блокуємо матч
             if best_match_signal:
                 signals.append(best_match_signal)
                 sent_alerts[match_id] = current_time
@@ -189,7 +212,7 @@ def check_value_bets():
     return signals
 
 async def main_loop():
-    send_telegram_message("⚙️ <b>Сканер оновлено! Повернуто всі 60+ ліг, захист від спаму активний.</b>")
+    send_telegram_message("⚙️ <b>Сканер оновлено! Додано час події та фільтр на 48 годин.</b>")
     while True:
         try:
             signals = check_value_bets()
