@@ -156,7 +156,7 @@ def estimate_realistic_xg(fair_h, fair_a):
     
     return xg_h, xg_a
 
-# === ЛОГІКА СКАНУВАННЯ ===
+# === ЛОГІКА СКАНУВАННЯ З ХРОНОЛОГІЧНИМ СОРТУВАННЯМ ===
 
 def run_manual_scan():
     if not ODDS_API_KEY:
@@ -165,7 +165,7 @@ def run_manual_scan():
 
     send_telegram_message("🔍 <b>Запущено сканування (Filtered Poisson xG)...</b>")
     
-    signals = []
+    signals_data = [] # Масив об'єктів для сортування за часом
     now_utc = datetime.now(timezone.utc)
     max_time_utc = now_utc + timedelta(hours=48)
     requests_made = 0
@@ -249,13 +249,21 @@ def run_manual_scan():
                                 )
 
             if best_match_signal and signal_key:
-                signals.append(best_match_signal)
-                sent_signals_cache.add(signal_key)
+                signals_data.append({
+                    'time': match_time_utc,
+                    'text': best_match_signal,
+                    'key': signal_key
+                })
 
-    if signals:
-        for sig in signals:
-            send_telegram_message(sig)
-        send_telegram_message(f"✅ <b>Завершено!</b> Нових валуїв: {len(signals)}. Запитів API: {requests_made}")
+    if signals_data:
+        # Хронологічне сортування від найближчих матчів до пізніших
+        signals_data.sort(key=lambda x: x['time'])
+
+        for item in signals_data:
+            send_telegram_message(item['text'])
+            sent_signals_cache.add(item['key'])
+
+        send_telegram_message(f"✅ <b>Завершено!</b> Нових валуїв: {len(signals_data)}. Запитів API: {requests_made}")
     else:
         send_telegram_message(f"📭 <b>Завершено.</b> Нових валуїв не знайдено. Запитів API: {requests_made}")
 
