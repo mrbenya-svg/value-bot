@@ -4,12 +4,12 @@ import requests
 import threading
 import re
 from datetime import datetime
-from difflib import get_close_matches
+from difflib import SequenceMatcher
 from flask import Flask
 import telebot
 
 # ================================
-# 0. ВЕБ-СЕРВЕР ДЛЯ RENDER (PORT BINDING)
+# 0. ВЕБ-СЕРВЕР ДЛЯ RENDER
 # ================================
 app = Flask(__name__)
 
@@ -35,24 +35,19 @@ HEADERS_FOOTBALL = {'x-apisports-key': API_FOOTBALL_KEY}
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
-# Фільтри
 MIN_ODDS = 1.30
 MAX_ODDS = 5.00
-MIN_EV = -15.0  # % EV
-
-ALLOWED_BOOKMAKERS = ["pinnacle", "bet365", "unibet", "1xbet", "onexbet"]
+MIN_EV = 2.0  # % EV
 
 LEAGUES_MAP = {
     "soccer_epl": 39,
     "soccer_england_championship": 40,
     "soccer_england_league1": 41,
     "soccer_england_league2": 42,
-    "soccer_england_efl_cup": 48,
     "soccer_spain_la_liga": 140,
     "soccer_spain_segunda_division": 141,
     "soccer_germany_bundesliga": 78,
     "soccer_germany_bundesliga2": 79,
-    "soccer_germany_3liga": 80,
     "soccer_italy_serie_a": 135,
     "soccer_italy_serie_b": 136,
     "soccer_france_ligue_one": 61,
@@ -93,52 +88,61 @@ def calculate_fair_odds_and_ev(home_xg: float, away_xg: float, bk_odds: float):
     return fair_odds, ev, prob_pct
 
 # ================================
-# 3. РОБОТА З API-FOOTBALL
+# 3. ПОКРАЩЕНИЙ ПОШУК І КЕШУВАННЯ
 # ================================
 def fetch_league_teams_once(league_id: int):
     if league_id in LEAGUE_TEAMS_CACHE:
         return LEAGUE_TEAMS_CACHE[league_id]
 
     current_year = datetime.now().year
+    years_to_try = [current_year, current_year - 1]
 
-    try:
-        res = requests.get(
-            f"{API_FOOTBALL_URL}/teams",
-            headers=HEADERS_FOOTBALL,
-            params={'league': league_id, 'season': current_year},
-            timeout=10
-        ).json()
-        
-        teams_map = {}
-        for item in res.get('response', []):
-            teams_map[item['team']['name']] = item['team']['id']
+    for year in years_to_try:
+        try:
+            res = requests.get(
+                f"{API_FOOTBALL_URL}/teams",
+                headers=HEADERS_FOOTBALL,
+                params={'league': league_id, 'season': year},
+                timeout=10
+            ).json()
             
-        LEAGUE_TEAMS_CACHE[league_id] = teams_map
-        return teams_map
-    except Exception as e:
-        print(f"Помилка завантаження команд ліги {league_id}: {e}")
-        return {}
+            teams_data = res.get('response', [])
+            if teams_data:
+                teams_map = {item['team']['name']: item['team']['id'] for item in teams_data}
+                LEAGUE_TEAMS_CACHE[league_id] = teams_map
+                print(f"✅ Успішно завантажено {len(teams_map)} команд для ліги ID {league_id} (сезон {year})")
+                return teams_map
+        except Exception as e:
+            print(f"Помилка завантаження команд для ліги {league_id} ({year}): {e}")
+
+    print(f"❌ Не вдалося отримати команди для ліги ID {league_id}")
+    return {}
 
 def clean_team_name(name: str) -> str:
-    name = re.sub(r'\b(FC|CF|AFC|BSC|SC|AC|FK|SV|1\.)\b', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'\b(FC|CF|AFC|BSC|SC|AC|FK|SV|1\.|Club|Town|City|United|Athletic|Sporting)\b', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'[^a-zA-Z0-9\s]', '', name)
     return name.strip().lower()
 
 def find_best_team_match(odds_team_name: str, api_teams_map: dict):
     if not api_teams_map:
         return None
         
-    known_names = list(api_teams_map.keys())
     clean_odds_name = clean_team_name(odds_team_name)
-    
-    for name in known_names:
-        if clean_team_name(name) == clean_odds_name:
-            return api_teams_map[name]
-            
-    matches = get_close_matches(odds_team_name, known_names, n=1, cutoff=0.3)
-    if matches:
-        return api_teams_map[matches[0]]
+    best_score = 0.0
+    best_team_id = None
+
+    for api_name, team_id in api_teams_map.items():
+        clean_api_name = clean_team_name(api_name)
         
-    return None
+        if clean_odds_name == clean_api_name or clean_odds_name in clean_api_name or clean_api_name in clean_odds_name:
+            return team_id
+            
+        score = SequenceMatcher(None, clean_odds_name, clean_api_name).ratio()
+        if score > best_score:
+            best_score = score
+            best_team_id = team_id
+
+    return best_team_id if best_score >= 0.4 else None
 
 def get_real_team_xg(team_id: int):
     if team_id in XG_CACHE:
@@ -175,13 +179,12 @@ def get_real_team_xg(team_id: int):
 # 4. СКАНУВАННЯ
 # ================================
 def run_scan_and_notify(chat_id):
-    bot.send_message(chat_id, "🔎 <b>Запуск сканування 22 ліг...</b>", parse_mode="HTML")
+    bot.send_message(chat_id, "🔎 <b>Запуск сканування...</b>", parse_mode="HTML")
     found_count = 0
 
     for odds_league_key, fb_league_id in LEAGUES_MAP.items():
         api_teams_map = fetch_league_teams_once(fb_league_id)
         if not api_teams_map:
-            print(f"⚠️ Не вдалося отримати команди для ліги {odds_league_key} (ID: {fb_league_id})")
             continue
 
         try:
@@ -194,44 +197,43 @@ def run_scan_and_notify(chat_id):
             print(f"Помилка Odds API для {odds_league_key}: {e}")
             continue
 
-        if not isinstance(odds_res, list):
+        if not isinstance(odds_res, list) or not odds_res:
             continue
 
         for match in odds_res:
             home_team_odds = match['home_team']
             away_team_odds = match['away_team']
 
-            best_odds = 0.0
+            # Шукаємо АБСОЛЮТНО НАЙКРАЩИЙ коефіцієнт серед УСІХ букмекерів
+            max_odds = 0.0
             best_bk_name = ""
-            
-            for bm in match.get('bookmakers', []):
-                bm_key = bm.get('key', '').lower()
-                if any(allowed in bm_key for allowed in ALLOWED_BOOKMAKERS):
-                    for market in bm.get('markets', []):
-                        if market['key'] == 'h2h':
-                            for outcome in market.get('outcomes', []):
-                                if outcome['name'] == home_team_odds and outcome['price'] > best_odds:
-                                    best_odds = outcome['price']
-                                    best_bk_name = bm['title']
 
-            if not (MIN_ODDS <= best_odds <= MAX_ODDS):
+            for bm in match.get('bookmakers', []):
+                for market in bm.get('markets', []):
+                    if market['key'] == 'h2h':
+                        for outcome in market.get('outcomes', []):
+                            if outcome['name'] == home_team_odds and outcome['price'] > max_odds:
+                                max_odds = outcome['price']
+                                best_bk_name = bm['title']
+
+            if not (MIN_ODDS <= max_odds <= MAX_ODDS):
                 continue
 
             home_team_id = find_best_team_match(home_team_odds, api_teams_map)
             away_team_id = find_best_team_match(away_team_odds, api_teams_map)
 
             if not home_team_id or not away_team_id:
-                print(f"❌ Не знайдено ID для: {home_team_odds} або {away_team_odds}")
+                print(f"⚠️ Не вдалося співставити назви: '{home_team_odds}' або '{away_team_odds}'")
                 continue
 
             home_xg = get_real_team_xg(home_team_id)
             away_xg = get_real_team_xg(away_team_id)
 
             if home_xg is None or away_xg is None:
-                print(f"❌ Немає xG для: {home_team_odds} ({home_xg}) або {away_team_odds} ({away_xg})")
+                print(f"⚠️ Пропущено (немає останніх 5 матчів): {home_team_odds} vs {away_team_odds}")
                 continue
 
-            fair_odds, ev, prob_pct = calculate_fair_odds_and_ev(home_xg, away_xg, best_odds)
+            fair_odds, ev, prob_pct = calculate_fair_odds_and_ev(home_xg, away_xg, max_odds)
 
             if ev is not None and ev >= MIN_EV:
                 found_count += 1
@@ -241,7 +243,7 @@ def run_scan_and_notify(chat_id):
                     f"📊 <b>Model xG (Last 5):</b> {home_xg} - {away_xg}\n"
                     f"🏆 <b>Ліга:</b> {odds_league_key}\n"
                     f"📌 <b>Ставка:</b> {home_team_odds} (П1)\n"
-                    f"📈 <b>Коефіцієнт БК:</b> {best_odds} ({best_bk_name})\n"
+                    f"📈 <b>Макс. кф БК:</b> {max_odds} ({best_bk_name})\n"
                     f"⚖️ <b>Справедливий кф:</b> {fair_odds} ({prob_pct}%)\n"
                     f"🔥 <b>EV:</b> {ev}%"
                 )
