@@ -3,12 +3,13 @@ import math
 import requests
 import threading
 import re
+from datetime import datetime
 from difflib import get_close_matches
 from flask import Flask
 import telebot
 
 # ================================
-# 0. ФЕЙКОВИЙ ВЕБ-СЕРВЕР ДЛЯ RENDER (PORT BINDING)
+# 0. ВЕБ-СЕРВЕР ДЛЯ RENDER (PORT BINDING)
 # ================================
 app = Flask(__name__)
 
@@ -20,7 +21,6 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port, use_reloader=False)
 
-# Запуск Flask у daemon-потоці до старту бота
 threading.Thread(target=run_flask, daemon=True).start()
 
 # ================================
@@ -36,14 +36,12 @@ HEADERS_FOOTBALL = {'x-apisports-key': API_FOOTBALL_KEY}
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
 # Фільтри
-MIN_ODDS = 1.50
-MAX_ODDS = 4.50
-MIN_EV = -5.0  # % EV
+MIN_ODDS = 1.30
+MAX_ODDS = 5.00
+MIN_EV = 1.0  # % EV
 
-# ТОП-4 БУКМЕКЕРИ
-ALLOWED_BOOKMAKERS = ["pinnacle", "bet365", "unibet", "onexbet"]
+ALLOWED_BOOKMAKERS = ["pinnacle", "bet365", "unibet", "1xbet", "onexbet"]
 
-# 22 ліги
 LEAGUES_MAP = {
     "soccer_epl": 39,
     "soccer_england_championship": 40,
@@ -95,17 +93,19 @@ def calculate_fair_odds_and_ev(home_xg: float, away_xg: float, bk_odds: float):
     return fair_odds, ev, prob_pct
 
 # ================================
-# 3. ЕКОНОМНА РОБОТА З API-FOOTBALL
+# 3. РОБОТА З API-FOOTBALL
 # ================================
 def fetch_league_teams_once(league_id: int):
     if league_id in LEAGUE_TEAMS_CACHE:
         return LEAGUE_TEAMS_CACHE[league_id]
 
+    current_year = datetime.now().year
+
     try:
         res = requests.get(
             f"{API_FOOTBALL_URL}/teams",
             headers=HEADERS_FOOTBALL,
-            params={'league': league_id, 'season': 2024},
+            params={'league': league_id, 'season': current_year},
             timeout=10
         ).json()
         
@@ -120,7 +120,6 @@ def fetch_league_teams_once(league_id: int):
         return {}
 
 def clean_team_name(name: str) -> str:
-    # Видаляємо суфікси/префікси для кращого порівняння назв
     name = re.sub(r'\b(FC|CF|AFC|BSC|SC|AC|FK|SV|1\.)\b', '', name, flags=re.IGNORECASE)
     return name.strip().lower()
 
@@ -129,14 +128,12 @@ def find_best_team_match(odds_team_name: str, api_teams_map: dict):
         return None
         
     known_names = list(api_teams_map.keys())
-    
-    # 1. Точний збіг очищених назв
     clean_odds_name = clean_team_name(odds_team_name)
+    
     for name in known_names:
         if clean_team_name(name) == clean_odds_name:
             return api_teams_map[name]
             
-    # 2. М'який нечіткий пошук з cutoff=0.3
     matches = get_close_matches(odds_team_name, known_names, n=1, cutoff=0.3)
     if matches:
         return api_teams_map[matches[0]]
@@ -144,12 +141,10 @@ def find_best_team_match(odds_team_name: str, api_teams_map: dict):
     return None
 
 def get_real_team_xg(team_id: int):
-    # Клієнтський кеш по team_id
     if team_id in XG_CACHE:
         return XG_CACHE[team_id]
 
     try:
-        # Запит останніх 5 матчів УСІХ турнірів (без фільтра по league_id)
         res = requests.get(
             f"{API_FOOTBALL_URL}/fixtures",
             headers=HEADERS_FOOTBALL,
@@ -186,6 +181,7 @@ def run_scan_and_notify(chat_id):
     for odds_league_key, fb_league_id in LEAGUES_MAP.items():
         api_teams_map = fetch_league_teams_once(fb_league_id)
         if not api_teams_map:
+            print(f"⚠️ Не вдалося отримати команди для ліги {odds_league_key} (ID: {fb_league_id})")
             continue
 
         try:
@@ -194,7 +190,8 @@ def run_scan_and_notify(chat_id):
                 params={'apiKey': ODDS_API_KEY, 'regions': 'eu', 'markets': 'h2h'},
                 timeout=10
             ).json()
-        except Exception:
+        except Exception as e:
+            print(f"Помилка Odds API для {odds_league_key}: {e}")
             continue
 
         if not isinstance(odds_res, list):
@@ -224,13 +221,14 @@ def run_scan_and_notify(chat_id):
             away_team_id = find_best_team_match(away_team_odds, api_teams_map)
 
             if not home_team_id or not away_team_id:
+                print(f"❌ Не знайдено ID для: {home_team_odds} або {away_team_odds}")
                 continue
 
-            # Отримання справжнього xG за останніми 5 матчами
             home_xg = get_real_team_xg(home_team_id)
             away_xg = get_real_team_xg(away_team_id)
 
             if home_xg is None or away_xg is None:
+                print(f"❌ Немає xG для: {home_team_odds} ({home_xg}) або {away_team_odds} ({away_xg})")
                 continue
 
             fair_odds, ev, prob_pct = calculate_fair_odds_and_ev(home_xg, away_xg, best_odds)
@@ -238,21 +236,21 @@ def run_scan_and_notify(chat_id):
             if ev is not None and ev >= MIN_EV:
                 found_count += 1
                 msg = (
-                    f"🎯 <b>TRUE POISSON VALUE BET (REAL xG)</b>\n\n"
+                    f"🎯 <b>VALUE BET FOUND</b>\n\n"
                     f"⚽️ <b>Матч:</b> {home_team_odds} vs {away_team_odds}\n"
                     f"📊 <b>Model xG (Last 5):</b> {home_xg} - {away_xg}\n"
                     f"🏆 <b>Ліга:</b> {odds_league_key}\n"
                     f"📌 <b>Ставка:</b> {home_team_odds} (П1)\n"
                     f"📈 <b>Коефіцієнт БК:</b> {best_odds} ({best_bk_name})\n"
                     f"⚖️ <b>Справедливий кф:</b> {fair_odds} ({prob_pct}%)\n"
-                    f"🔥 <b>Чистий EV:</b> +{ev}%"
+                    f"🔥 <b>EV:</b> {ev}%"
                 )
                 bot.send_message(chat_id, msg, parse_mode="HTML")
 
     if found_count == 0:
-        bot.send_message(chat_id, "🏁 Завершено. Чистих валуїв по топових конторах зараз немає.")
+        bot.send_message(chat_id, "🏁 Завершено. Валуїв не знайдено.")
     else:
-        bot.send_message(chat_id, f"✅ Завершено. Знайдено валуїв: {found_count}")
+        bot.send_message(chat_id, f"✅ Завершено. Знайдено матчів: {found_count}")
 
 # ================================
 # 5. TELEGRAM HANDLERS
