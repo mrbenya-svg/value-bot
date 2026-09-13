@@ -29,7 +29,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
-# Проміжний фільтр коефіцієнтів та EV
+# Фільтри коефіцієнтів та EV
 MIN_ODDS = 1.60
 MAX_ODDS = 3.40
 MIN_EV = 5.0
@@ -61,30 +61,23 @@ LEAGUES_MAP = {
 }
 
 # ================================
-# 2. МАТЕМАТИЧНА МОДЕЛЬ (Zero-Margin + Dampening + Poisson)
+# 2. МАТЕМАТИЧНА МОДЕЛЬ
 # ================================
 def poisson_probability(lmbda: float, k: int) -> float:
     return (lmbda ** k) * math.exp(-lmbda) / math.factorial(k)
 
 def calculate_full_poisson_model(avg_h, avg_d, avg_a):
-    """
-    1. Zero-margin: видалення маржі ринку
-    2. Dampening: згладжування xG для закритих/низькорезультативних матчів
-    3. Poisson 6x6: розрахунок справедливих кф для П1, П2, Фора 1 (0) та Фора 2 (0)
-    """
     margin = (1 / avg_h) + (1 / avg_d) + (1 / avg_a)
     p_h_clean = (1 / avg_h) / margin
     p_d_clean = (1 / avg_d) / margin
     p_a_clean = (1 / avg_a) / margin
 
-    # Dampening factor для загальної результативності
     dampened_total = max(1.85, min(3.10, 2.55 - 1.35 * (p_d_clean - 0.26)))
     
     share_h = p_h_clean / (p_h_clean + p_a_clean)
     lmbda_h = dampened_total * share_h
     lmbda_a = dampened_total * (1 - share_h)
 
-    # Матриця Пуассона 6х6
     p_win_h, p_draw, p_win_a = 0.0, 0.0, 0.0
     for h in range(6):
         for a in range(6):
@@ -99,19 +92,11 @@ def calculate_full_poisson_model(avg_h, avg_d, avg_a):
     fair_p1 = round(1 / p_win_h, 2) if p_win_h > 0 else 99.0
     fair_p2 = round(1 / p_win_a, 2) if p_win_a > 0 else 99.0
 
-    # Ймовірність для Фора (0) з урахуванням повернення при нічиї
-    p_ah1_0 = p_win_h / (p_win_h + p_win_a) if (p_win_h + p_win_a) > 0 else 0
-    p_ah2_0 = p_win_a / (p_win_h + p_win_a) if (p_win_h + p_win_a) > 0 else 0
-    fair_ah1_0 = round(1 / p_ah1_0, 2) if p_ah1_0 > 0 else 99.0
-    fair_ah2_0 = round(1 / p_ah2_0, 2) if p_ah2_0 > 0 else 99.0
-
     return {
         'xg_h': round(lmbda_h, 2),
         'xg_a': round(lmbda_a, 2),
         'P1': {'fair_odds': fair_p1, 'prob': round(p_win_h * 100, 1)},
-        'P2': {'fair_odds': fair_p2, 'prob': round(p_win_a * 100, 1)},
-        'AH1_0': {'fair_odds': fair_ah1_0, 'prob': round(p_ah1_0 * 100, 1)},
-        'AH2_0': {'fair_odds': fair_ah2_0, 'prob': round(p_ah2_0 * 100, 1)}
+        'P2': {'fair_odds': fair_p2, 'prob': round(p_win_a * 100, 1)}
     }
 
 def format_match_time(iso_time_str: str) -> str:
@@ -122,11 +107,12 @@ def format_match_time(iso_time_str: str) -> str:
         return "Час невідомий"
 
 # ================================
-# 3. СКАНУВАННЯ ТА ФІЛЬТРАЦІЯ
+# 3. СКАНУВАННЯ ТА ХРОНОЛОГІЧНЕ СОРТУВАННЯ
 # ================================
 def run_scan_and_notify(chat_id):
-    bot.send_message(chat_id, "🔎 <b>Запуск сканера (Zero-Margin + Dampening + Poisson)...</b>", parse_mode="HTML")
-    found_count = 0
+    bot.send_message(chat_id, "🔎 <b>Запуск сканера (хронологічний порядок)...</b>", parse_mode="HTML")
+    
+    valuable_matches = []
     now_utc = datetime.now(timezone.utc)
 
     for odds_league_key, league_title in LEAGUES_MAP.items():
@@ -146,6 +132,7 @@ def run_scan_and_notify(chat_id):
 
         for match in odds_res:
             commence_str = match.get('commence_time', '')
+            match_dt = None
             if commence_str:
                 try:
                     match_dt = datetime.fromisoformat(commence_str.replace("Z", "+00:00"))
@@ -153,6 +140,9 @@ def run_scan_and_notify(chat_id):
                         continue
                 except Exception:
                     pass
+
+            if not match_dt:
+                match_dt = now_utc + timedelta(days=99)
 
             home_team = match['home_team']
             away_team = match['away_team']
@@ -196,7 +186,6 @@ def run_scan_and_notify(chat_id):
             if MIN_ODDS <= max_h_odds <= MAX_ODDS:
                 ev_p1 = round(((max_h_odds / model['P1']['fair_odds']) - 1) * 100, 2)
                 if ev_p1 >= MIN_EV:
-                    found_count += 1
                     msg = (
                         f"🎯 <b>VALUE BET FOUND</b>\n\n"
                         f"⚽️ <b>Матч:</b> {home_team} vs {away_team}\n"
@@ -208,13 +197,12 @@ def run_scan_and_notify(chat_id):
                         f"⚖️ <b>Fair Odds:</b> {model['P1']['fair_odds']} ({model['P1']['prob']}%)\n"
                         f"🔥 <b>EV:</b> +{ev_p1}%"
                     )
-                    bot.send_message(chat_id, msg, parse_mode="HTML")
+                    valuable_matches.append({'match_time': match_dt, 'msg': msg})
 
             # Перевірка П2
             if MIN_ODDS <= max_a_odds <= MAX_ODDS:
                 ev_p2 = round(((max_a_odds / model['P2']['fair_odds']) - 1) * 100, 2)
                 if ev_p2 >= MIN_EV:
-                    found_count += 1
                     msg = (
                         f"🎯 <b>VALUE BET FOUND</b>\n\n"
                         f"⚽️ <b>Матч:</b> {home_team} vs {away_team}\n"
@@ -226,12 +214,18 @@ def run_scan_and_notify(chat_id):
                         f"⚖️ <b>Fair Odds:</b> {model['P2']['fair_odds']} ({model['P2']['prob']}%)\n"
                         f"🔥 <b>EV:</b> +{ev_p2}%"
                     )
-                    bot.send_message(chat_id, msg, parse_mode="HTML")
+                    valuable_matches.append({'match_time': match_dt, 'msg': msg})
 
-    if found_count == 0:
+    # Сортування за часом початку (від найближчого)
+    valuable_matches.sort(key=lambda item: item['match_time'])
+
+    for val_item in valuable_matches:
+        bot.send_message(chat_id, val_item['msg'], parse_mode="HTML")
+
+    if not valuable_matches:
         bot.send_message(chat_id, "🏁 Завершено. Валуїв з кф 1.60-3.40 та EV >= 5.0% не знайдено.")
     else:
-        bot.send_message(chat_id, f"✅ Завершено. Знайдено валуйних сигналів: {found_count}")
+        bot.send_message(chat_id, f"✅ Завершено. Знайдено валуйних сигналів: {len(valuable_matches)}")
 
 # ================================
 # 4. TELEGRAM HANDLERS
