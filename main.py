@@ -29,9 +29,9 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
-MIN_ODDS = 1.30
-MAX_ODDS = 5.00
-MIN_EV = 3.0  # Поріг EV +3%
+MIN_ODDS = 1.75
+MAX_ODDS = 3.6
+MIN_EV = 5.0  # Поріг EV +3%
 
 # Повний список з 22 ліг
 LEAGUES_MAP = {
