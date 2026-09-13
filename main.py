@@ -18,7 +18,7 @@ if not TELEGRAM_BOT_TOKEN:
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
 MIN_EV = 5.0          # Мінімальна перевага +5%
-MAX_EV = 25.0         # Максимальна перевага
+MAX_EV = 25.0         # Максимальна перевага (відсікає аномалії)
 MIN_ODDS = 1.60       # Мінімальний кф
 MAX_ODDS = 3.40       # Максимальний кф
 
@@ -33,6 +33,9 @@ LEAGUES = [
     "soccer_uefa_europa_conference_league", "soccer_uefa_nations_league", "soccer_netherlands_eredivisie",
     "soccer_portugal_primeira_liga", "soccer_belgium_first_div", "soccer_turkey_super_league", "soccer_austria_bundesliga"
 ]
+
+# Кеш надісланих сигналів (Анти-спам)
+sent_signals_cache = set()
 
 logging.basicConfig(level=logging.INFO)
 app = Flask('')
@@ -58,7 +61,7 @@ def send_telegram_message(text):
     except Exception as e:
         logging.error(f"Error sending message: {e}")
 
-# === МАТЕМАТИЧНА МОДЕЛЬ ПУАССОНА ===
+# === МАТЕМАТИЧНА МОДЕЛЬ ПУАССОНА ТА ЗГЛАДЖЕННЯ xG ===
 
 def poisson_prob(lmbda, k):
     if lmbda <= 0:
@@ -89,23 +92,31 @@ def calculate_match_probabilities(xg_home, xg_away):
 
 def extract_fair_sharp_probabilities(bookmakers, home_team, away_team):
     """
-    Витягує лінію Sharp-букмекера (Pinnacle/Betfair) та знімає маржу (Fair Probability), 
-    щоб отримати об'єктивний xG та справжню ймовірність події.
+    Витягує лінію з найкращих бірж/букмекерів (Pinnacle, Betfair, William Hill, 1xBet),
+    обирає найкращу лінію для обчислення справжньої безмаржинальної ймовірності.
     """
-    sharp_bm = None
-    for bm in bookmakers:
-        if bm.get('key') in ['pinnacle', 'betfair_ex_uk', 'matchbook']:
-            sharp_bm = bm
-            break
+    SHARP_KEYS = [
+        'pinnacle', 
+        'betfair_ex_uk', 'betfair_sb_uk', 
+        'williamhill', 
+        'onexbet', '1xbet'
+    ]
     
-    if not sharp_bm and bookmakers:
-        sharp_bm = bookmakers[0] # Резерв
+    selected_bm = None
 
-    if not sharp_bm:
+    for bm in bookmakers:
+        if bm.get('key') in SHARP_KEYS:
+            selected_bm = bm
+            break
+            
+    if not selected_bm and bookmakers:
+        selected_bm = bookmakers[0]
+
+    if not selected_bm:
         return None, None, None
 
     h_odds, d_odds, a_odds = None, None, None
-    for mk in sharp_bm.get('markets', []):
+    for mk in selected_bm.get('markets', []):
         if mk.get('key') == 'h2h':
             for out in mk.get('outcomes', []):
                 if out.get('name') == home_team: h_odds = out.get('price')
@@ -125,6 +136,26 @@ def extract_fair_sharp_probabilities(bookmakers, home_team, away_team):
 
     return fair_h, fair_d, fair_a
 
+def estimate_realistic_xg(fair_h, fair_a):
+    """
+    Реалістичний розрахунок xG з використанням регресії до середнього.
+    Запобігає роздуванню xG для команд у кризі.
+    """
+    base_league_total = 2.50 # Середня тотальність для європейських ліг
+    
+    # Співвідношення сил команд
+    ratio = fair_h / (fair_h + fair_a)
+    
+    # Згладжування розриву (Dampening multiplier)
+    xg_h = (base_league_total * ratio * 1.05)
+    xg_a = (base_league_total * (1 - ratio) * 0.95)
+    
+    # Жорсткі капи, щоб уникнути фейкових 2.0+ xG
+    xg_h = min(max(round(xg_h, 2), 0.50), 1.95)
+    xg_a = min(max(round(xg_a, 2), 0.40), 1.75)
+    
+    return xg_h, xg_a
+
 # === ЛОГІКА СКАНУВАННЯ ===
 
 def run_manual_scan():
@@ -132,7 +163,7 @@ def run_manual_scan():
         send_telegram_message("❌ <b>Помилка:</b> Відсутній ODDS_API_KEY!")
         return
 
-    send_telegram_message("🔍 <b>Запущено сканування (True Poisson xG + Fair Odds)...</b>")
+    send_telegram_message("🔍 <b>Запущено сканування (Filtered Poisson xG)...</b>")
     
     signals = []
     now_utc = datetime.now(timezone.utc)
@@ -147,7 +178,7 @@ def run_manual_scan():
             if res.status_code != 200:
                 continue
             data = res.json()
-        except Exception as e:
+        except Exception:
             continue
 
         for match in data:
@@ -169,15 +200,19 @@ def run_manual_scan():
             fair_h, fair_d, fair_a = extract_fair_sharp_probabilities(bookmakers, home, away)
             if not fair_h: continue
 
-            # Оцінка xG на основі безмаржинальних ймовірностей
-            base_total_goals = 2.70
-            xg_h = round((fair_h / (fair_h + fair_a)) * base_total_goals * 1.08, 2)
-            xg_a = round((fair_a / (fair_h + fair_a)) * base_total_goals * 0.92, 2)
+            # Обчислюємо реалістичний xG
+            xg_h, xg_a = estimate_realistic_xg(fair_h, fair_a)
 
+            # Перераховуємо ймовірності Пуассона з коректним xG
             p_h, p_d, p_a = calculate_match_probabilities(xg_h, xg_a)
 
             model_probs = {home: p_h, "Draw": p_d, away: p_a}
 
+            best_match_signal = None
+            max_signal_ev = -999.0
+            signal_key = None
+
+            # Шукаємо ТІЛЬКИ 1 найкращий валуй на матч (дедуплікація)
             for bm in bookmakers:
                 bm_name = bm.get('title')
                 for mk in bm.get('markets', []):
@@ -193,24 +228,36 @@ def run_manual_scan():
                         fair_odds = round(1.0 / model_prob, 2)
 
                         if MIN_EV <= ev <= MAX_EV and MIN_ODDS <= price <= MAX_ODDS:
-                            signals.append(
-                                f"🎯 <b>TRUE POISSON VALUE BET</b>\n\n"
-                                f"⚽ <b>Матч:</b> {home} vs {away}\n"
-                                f"📊 <b>Model xG:</b> {xg_h} - {xg_a}\n"
-                                f"📅 <b>Час:</b> {formatted_time} (Кв)\n"
-                                f"🏆 <b>Ліга:</b> {league}\n"
-                                f"📌 <b>Ставка:</b> {name}\n"
-                                f"📈 <b>Коефіцієнт БК:</b> <code>{price}</code> ({bm_name})\n"
-                                f"⚖️ <b>Справедливий кф:</b> {fair_odds} ({round(model_prob * 100, 1)}%)\n"
-                                f"🔥 <b>Чистий EV:</b> +{round(ev, 2)}%"
-                            )
+                            cache_id = f"{home}_{away}_{name}_{bm_name}"
+                            
+                            if cache_id in sent_signals_cache:
+                                continue
+
+                            if ev > max_signal_ev:
+                                max_signal_ev = ev
+                                signal_key = cache_id
+                                best_match_signal = (
+                                    f"🎯 <b>TRUE POISSON VALUE BET</b>\n\n"
+                                    f"⚽ <b>Матч:</b> {home} vs {away}\n"
+                                    f"📊 <b>Model xG:</b> {xg_h} - {xg_a}\n"
+                                    f"📅 <b>Час:</b> {formatted_time} (Кв)\n"
+                                    f"🏆 <b>Ліга:</b> {league}\n"
+                                    f"📌 <b>Ставка:</b> {name}\n"
+                                    f"📈 <b>Коефіцієнт БК:</b> <code>{price}</code> ({bm_name})\n"
+                                    f"⚖️ <b>Справедливий кф:</b> {fair_odds} ({round(model_prob * 100, 1)}%)\n"
+                                    f"🔥 <b>Чистий EV:</b> +{round(ev, 2)}%"
+                                )
+
+            if best_match_signal and signal_key:
+                signals.append(best_match_signal)
+                sent_signals_cache.add(signal_key)
 
     if signals:
         for sig in signals:
             send_telegram_message(sig)
-        send_telegram_message(f"✅ <b>Завершено!</b> Знайдено валуїв: {len(signals)}. Запитів API: {requests_made}")
+        send_telegram_message(f"✅ <b>Завершено!</b> Нових валуїв: {len(signals)}. Запитів API: {requests_made}")
     else:
-        send_telegram_message(f"📭 <b>Завершено.</b> Валуїв не знайдено. Запитів API: {requests_made}")
+        send_telegram_message(f"📭 <b>Завершено.</b> Нових валуїв не знайдено. Запитів API: {requests_made}")
 
 @bot.message_handler(commands=['scan'])
 def handle_scan_command(message):
