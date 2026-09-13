@@ -10,7 +10,6 @@ import telebot
 API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 API_FOOTBALL_URL = "https://v3.football.api-sports.io"
 HEADERS_FOOTBALL = {'x-apisports-key': API_FOOTBALL_KEY}
@@ -22,7 +21,10 @@ MIN_ODDS = 1.50
 MAX_ODDS = 4.50
 MIN_EV = 5.0  # % EV
 
-# Мапінг 22 ліг
+# ТОП-4 БУКМЕКЕРИ (ігноруємо все інше сміття)
+ALLOWED_BOOKMAKERS = ["pinnacle", "bet365", "unibet", "onexbet"]
+
+# 22 ліги
 LEAGUES_MAP = {
     "soccer_epl": 39,
     "soccer_england_championship": 40,
@@ -52,7 +54,7 @@ LEAGUE_TEAMS_CACHE = {}
 XG_CACHE = {}
 
 # ================================
-# 2. МАТЕМАТИКА
+# 2. МАТЕМАТИКА ПУАССОНА
 # ================================
 def poisson_probability(lmbda: float, k: int) -> float:
     return (lmbda ** k) * math.exp(-lmbda) / math.factorial(k)
@@ -90,9 +92,7 @@ def fetch_league_teams_once(league_id: int):
         
         teams_map = {}
         for item in res.get('response', []):
-            t_name = item['team']['name']
-            t_id = item['team']['id']
-            teams_map[t_name] = t_id
+            teams_map[item['team']['name']] = item['team']['id']
             
         LEAGUE_TEAMS_CACHE[league_id] = teams_map
         return teams_map
@@ -108,8 +108,7 @@ def find_best_team_match(odds_team_name: str, api_teams_map: dict):
     matches = get_close_matches(odds_team_name, known_names, n=1, cutoff=0.5)
     
     if matches:
-        matched_name = matches[0]
-        return api_teams_map[matched_name]
+        return api_teams_map[matches[0]]
     return None
 
 def get_real_team_xg(team_id: int, league_id: int):
@@ -141,14 +140,14 @@ def get_real_team_xg(team_id: int, league_id: int):
         XG_CACHE[cache_key] = xg
         return xg
     except Exception as e:
-        print(f"Помилка розрахунку xG для team_id {team_id}: {e}")
+        print(f"Помилка xG для team_id {team_id}: {e}")
         return None
 
 # ================================
-# 4. ГОЛОВНА ФУНКЦІЯ СКТАНУВАННЯ
+# 4. СКТАНУВАННЯ
 # ================================
 def run_scan_and_notify(chat_id):
-    bot.send_message(chat_id, "🔎 <b>Запуск сканування 22 ліг... Зачекайте.</b>", parse_mode="HTML")
+    bot.send_message(chat_id, "🔎 <b>Запуск сканування 22 ліг...</b>", parse_mode="HTML")
     found_count = 0
 
     for odds_league_key, fb_league_id in LEAGUES_MAP.items():
@@ -174,13 +173,17 @@ def run_scan_and_notify(chat_id):
 
             best_odds = 0.0
             best_bk_name = ""
+            
+            # ФІЛЬТР ПО 4 ДОЗВОЛЕНИХ БУКМЕКЕРАХ
             for bm in match.get('bookmakers', []):
-                for market in bm.get('markets', []):
-                    if market['key'] == 'h2h':
-                        for outcome in market.get('outcomes', []):
-                            if outcome['name'] == home_team_odds and outcome['price'] > best_odds:
-                                best_odds = outcome['price']
-                                best_bk_name = bm['title']
+                bm_key = bm.get('key', '').lower()
+                if any(allowed in bm_key for allowed in ALLOWED_BOOKMAKERS):
+                    for market in bm.get('markets', []):
+                        if market['key'] == 'h2h':
+                            for outcome in market.get('outcomes', []):
+                                if outcome['name'] == home_team_odds and outcome['price'] > best_odds:
+                                    best_odds = outcome['price']
+                                    best_bk_name = bm['title']
 
             if not (MIN_ODDS <= best_odds <= MAX_ODDS):
                 continue
@@ -214,21 +217,21 @@ def run_scan_and_notify(chat_id):
                 bot.send_message(chat_id, msg, parse_mode="HTML")
 
     if found_count == 0:
-        bot.send_message(chat_id, "🏁 Сканування завершено. Валуйних ставок за поточними фільтрами не знайдено.")
+        bot.send_message(chat_id, "🏁 Завершено. Чистих валуїв по топових конторах зараз немає.")
     else:
-        bot.send_message(chat_id, f"✅ Сканування завершено. Знайдено валуїв: {found_count}")
+        bot.send_message(chat_id, f"✅ Завершено. Знайдено валуїв: {found_count}")
 
 # ================================
-# 5. ОБРОБКА КОМАНД TELEGRAM
+# 5. TELEGRAM HANDLERS
 # ================================
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "Привіт! Надішли команду /scan або слово 'скан', щоб запустити пошук валуїв.")
+    bot.reply_to(message, "Надішли 'скан' або /scan для запуску.")
 
 @bot.message_handler(func=lambda message: message.text.lower() in ['скан', '/scan'])
 def handle_scan_request(message):
     run_scan_and_notify(message.chat.id)
 
 if __name__ == "__main__":
-    print("🤖 Бот запущений і чекає команди 'скан'...")
+    print("🤖 Бот чекає команду 'скан'...")
     bot.infinity_polling()
