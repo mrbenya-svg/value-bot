@@ -2,6 +2,7 @@ import os
 import math
 import requests
 import threading
+import re
 from difflib import get_close_matches
 from flask import Flask
 import telebot
@@ -118,27 +119,41 @@ def fetch_league_teams_once(league_id: int):
         print(f"Помилка завантаження команд ліги {league_id}: {e}")
         return {}
 
+def clean_team_name(name: str) -> str:
+    # Видаляємо суфікси/префікси для кращого порівняння назв
+    name = re.sub(r'\b(FC|CF|AFC|BSC|SC|AC|FK|SV|1\.)\b', '', name, flags=re.IGNORECASE)
+    return name.strip().lower()
+
 def find_best_team_match(odds_team_name: str, api_teams_map: dict):
     if not api_teams_map:
         return None
         
     known_names = list(api_teams_map.keys())
-    matches = get_close_matches(odds_team_name, known_names, n=1, cutoff=0.5)
     
+    # 1. Точний збіг очищених назв
+    clean_odds_name = clean_team_name(odds_team_name)
+    for name in known_names:
+        if clean_team_name(name) == clean_odds_name:
+            return api_teams_map[name]
+            
+    # 2. М'який нечіткий пошук з cutoff=0.3
+    matches = get_close_matches(odds_team_name, known_names, n=1, cutoff=0.3)
     if matches:
         return api_teams_map[matches[0]]
+        
     return None
 
-def get_real_team_xg(team_id: int, league_id: int):
-    cache_key = f"{team_id}_{league_id}"
-    if cache_key in XG_CACHE:
-        return XG_CACHE[cache_key]
+def get_real_team_xg(team_id: int):
+    # Клієнтський кеш по team_id
+    if team_id in XG_CACHE:
+        return XG_CACHE[team_id]
 
     try:
+        # Запит останніх 5 матчів УСІХ турнірів (без фільтра по league_id)
         res = requests.get(
             f"{API_FOOTBALL_URL}/fixtures",
             headers=HEADERS_FOOTBALL,
-            params={'team': team_id, 'league': league_id, 'last': 5, 'status': 'FT'},
+            params={'team': team_id, 'last': 5, 'status': 'FT'},
             timeout=10
         ).json()
         
@@ -155,7 +170,7 @@ def get_real_team_xg(team_id: int, league_id: int):
             total_goals += goals if goals is not None else 0
 
         xg = round(total_goals / len(fixtures), 2)
-        XG_CACHE[cache_key] = xg
+        XG_CACHE[team_id] = xg
         return xg
     except Exception as e:
         print(f"Помилка xG для team_id {team_id}: {e}")
@@ -211,8 +226,9 @@ def run_scan_and_notify(chat_id):
             if not home_team_id or not away_team_id:
                 continue
 
-            home_xg = get_real_team_xg(home_team_id, fb_league_id)
-            away_xg = get_real_team_xg(away_team_id, fb_league_id)
+            # Отримання справжнього xG за останніми 5 матчами
+            home_xg = get_real_team_xg(home_team_id)
+            away_xg = get_real_team_xg(away_team_id)
 
             if home_xg is None or away_xg is None:
                 continue
