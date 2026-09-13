@@ -1,8 +1,26 @@
 import os
 import math
 import requests
+import threading
 from difflib import get_close_matches
+from flask import Flask
 import telebot
+
+# ================================
+# 0. ФЕЙКОВИЙ ВЕБ-СЕРВЕР ДЛЯ RENDER (PORT BINDING)
+# ================================
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "Value Bot is alive!", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port, use_reloader=False)
+
+# Запуск Flask у daemon-потоці до старту бота
+threading.Thread(target=run_flask, daemon=True).start()
 
 # ================================
 # 1. КОНФІГУРАЦІЯ
@@ -21,7 +39,7 @@ MIN_ODDS = 1.50
 MAX_ODDS = 4.50
 MIN_EV = 5.0  # % EV
 
-# ТОП-4 БУКМЕКЕРИ (ігноруємо все інше сміття)
+# ТОП-4 БУКМЕКЕРИ
 ALLOWED_BOOKMAKERS = ["pinnacle", "bet365", "unibet", "onexbet"]
 
 # 22 ліги
@@ -144,7 +162,7 @@ def get_real_team_xg(team_id: int, league_id: int):
         return None
 
 # ================================
-# 4. СКТАНУВАННЯ
+# 4. СКАНУВАННЯ
 # ================================
 def run_scan_and_notify(chat_id):
     bot.send_message(chat_id, "🔎 <b>Запуск сканування 22 ліг...</b>", parse_mode="HTML")
@@ -174,7 +192,6 @@ def run_scan_and_notify(chat_id):
             best_odds = 0.0
             best_bk_name = ""
             
-            # ФІЛЬТР ПО 4 ДОЗВОЛЕНИХ БУКМЕКЕРАХ
             for bm in match.get('bookmakers', []):
                 bm_key = bm.get('key', '').lower()
                 if any(allowed in bm_key for allowed in ALLOWED_BOOKMAKERS):
