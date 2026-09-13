@@ -38,7 +38,7 @@ bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 # Фільтри
 MIN_ODDS = 1.30
 MAX_ODDS = 5.00
-MIN_EV = 1.0  # % EV
+MIN_EV = -5.0  # % EV
 
 ALLOWED_BOOKMAKERS = ["pinnacle", "bet365", "unibet", "1xbet", "onexbet"]
 
