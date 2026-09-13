@@ -1,290 +1,150 @@
 import os
-import logging
-import math
 import requests
-from datetime import datetime, timezone, timedelta
-from flask import Flask
-from threading import Thread
-import telebot
+import math
 
-# === НАЛАШТУВАННЯ ТА КЛЮЧІ ===
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# Ключі з Render Environment Variables
+API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
-API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY") # Ключ для реальної статистики xGз RapidAPI
 
-if not TELEGRAM_BOT_TOKEN:
-    logging.error("TELEGRAM_BOT_TOKEN is missing!")
+API_FOOTBALL_URL = "https://v3.football.api-sports.io"
+HEADERS_FOOTBALL = {'x-apisports-key': API_FOOTBALL_KEY}
 
-bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+# --- ФІЛЬТРИ СТРАТЕГІЇ ---
+MIN_ODDS = 1.50      # Мінімальний коефіцієнт БК
+MAX_ODDS = 4.50      # Максимальний коефіцієнт БК
+MIN_EV = 5.0         # Мінімальний чистий EV (%) для відправки алерта
 
-MIN_EV = 5.0          # Мінімальна перевага +5%
-MAX_EV = 25.0         # Максимальна перевага (відсікає аномалії)
-MIN_ODDS = 1.60       # Мінімальний кф
-MAX_ODDS = 3.40       # Максимальний кф
+# Словник-мапінг усіх 22 ліг (Odds API Key -> API-Football League ID)
+LEAGUES_MAP = {
+    "soccer_epl": 39,                     # EPL (Англія)
+    "soccer_england_championship": 40,    # Championship (Англія)
+    "soccer_england_league1": 41,         # League One (Англія)
+    "soccer_england_league2": 42,         # League Two (Англія)
+    "soccer_england_efl_cup": 48,         # EFL Cup (Англія)
+    "soccer_spain_la_liga": 140,          # La Liga (Іспанія)
+    "soccer_spain_segunda_division": 141, # La Liga 2 (Іспанія)
+    "soccer_germany_bundesliga": 78,      # Bundesliga (Німеччина)
+    "soccer_germany_bundesliga2": 79,     # 2. Bundesliga (Німеччина)
+    "soccer_germany_3liga": 80,           # 3. Liga (Німеччина)
+    "soccer_italy_serie_a": 135,          # Serie A (Італія)
+    "soccer_italy_serie_b": 136,          # Serie B (Італія)
+    "soccer_france_ligue_one": 61,        # Ligue 1 (Франція)
+    "soccer_france_ligue_two": 62,        # Ligue 2 (Франція)
+    "soccer_netherlands_eredivisie": 88,   # Eredivisie (Нідерланди)
+    "soccer_portugal_primeira_liga": 94,  # Primeira Liga (Португалія)
+    "soccer_belgium_first_div": 144,      # Pro League (Бельгія)
+    "soccer_turkey_super_lig": 203,       # Super Lig (Туреччина)
+    "soccer_scotland_premiership": 179,   # Premiership (Шотландія)
+    "soccer_austria_bundesliga": 218,     # Bundesliga (Австрія)
+    "soccer_switzerland_superleague": 207,# Super League (Швейцарія)
+    "soccer_greece_super_league": 197     # Super League (Греція)
+}
 
-MARKETS = "h2h"
-REGIONS = "eu"
-
-# ПОВНИЙ ТВІЙ СПИСОК ІЗ 22 ЛІГ (БЕЗ ЖОДНИХ СКОРОЧЕНЬ)
-LEAGUES = [
-    "soccer_epl", "soccer_england_championship", "soccer_england_league1", "soccer_england_league2",
-    "soccer_england_efl_cup", "soccer_fa_cup", "soccer_spain_la_liga", "soccer_spain_segunda_division",
-    "soccer_italy_serie_a", "soccer_italy_serie_b", "soccer_germany_bundesliga", "soccer_germany_bundesliga2",
-    "soccer_france_lique_one", "soccer_uefa_champs_league", "soccer_uefa_europa_league",
-    "soccer_uefa_europa_conference_league", "soccer_uefa_nations_league", "soccer_netherlands_eredivisie",
-    "soccer_portugal_primeira_liga", "soccer_belgium_first_div", "soccer_turkey_super_league", "soccer_austria_bundesliga"
-]
-
-# Кеш надісланих сигналів (Анти-спам)
-sent_signals_cache = set()
-
-logging.basicConfig(level=logging.INFO)
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Poisson True Value Bot (Real xG 5 Games) is running!"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    t = Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-
-def send_telegram_message(text):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return
+def get_team_xg_by_league(team_name: str, league_id: int) -> float:
+    """Отримує середній xG/голи команди за 5 останніх матчів у лізі"""
     try:
-        bot.send_message(TELEGRAM_CHAT_ID, text, parse_mode="HTML")
+        search_res = requests.get(
+            f"{API_FOOTBALL_URL}/teams",
+            headers=HEADERS_FOOTBALL,
+            params={'search': team_name},
+            timeout=10
+        ).json()
+        
+        teams = search_res.get('response', [])
+        if not teams:
+            return 1.20
+            
+        team_id = teams[0]['team']['id']
+        
+        fixtures_res = requests.get(
+            f"{API_FOOTBALL_URL}/fixtures",
+            headers=HEADERS_FOOTBALL,
+            params={'team': team_id, 'league': league_id, 'last': 5, 'status': 'FT'},
+            timeout=10
+        ).json()
+        
+        fixtures = fixtures_res.get('response', [])
+        if not fixtures:
+            return 1.20
+            
+        total_goals = 0
+        for match in fixtures:
+            if match['teams']['home']['id'] == team_id:
+                goals = match['goals']['home']
+            else:
+                goals = match['goals']['away']
+            total_goals += goals if goals is not None else 1
+            
+        return round(total_goals / len(fixtures), 2)
     except Exception as e:
-        logging.error(f"Error sending message: {e}")
+        print(f"Error fetching xG for {team_name}: {e}")
+        return 1.20
 
-# === МАТЕМАТИЧНА МОДЕЛЬ ПУАССОНА ===
-
-def poisson_prob(lmbda, k):
-    if lmbda <= 0:
-        return 0
+def poisson_probability(lmbda: float, k: int) -> float:
+    """Обчислення ймовірності за формулою Пуассона"""
     return (lmbda ** k) * math.exp(-lmbda) / math.factorial(k)
 
-def calculate_match_probabilities(xg_home, xg_away):
-    max_goals = 6
-    p_home, p_draw, p_away = 0.0, 0.0, 0.0
-
-    for h in range(max_goals + 1):
-        for a in range(max_goals + 1):
-            prob = poisson_prob(xg_home, h) * poisson_prob(xg_away, a)
+def calculate_ev(home_xg: float, away_xg: float, bookmaker_odds: float):
+    """Розрахунок справедливого кф та EV на П1"""
+    home_win_prob = 0.0
+    for h in range(0, 6):
+        for a in range(0, 6):
             if h > a:
-                p_home += prob
-            elif h == a:
-                p_draw += prob
-            else:
-                p_away += prob
+                home_win_prob += poisson_probability(home_xg, h) * poisson_probability(away_xg, a)
+                
+    if home_win_prob <= 0:
+        return None, None
 
-    total = p_home + p_draw + p_away
-    if total > 0:
-        p_home /= total
-        p_draw /= total
-        p_away /= total
+    fair_odds = round(1 / home_win_prob, 2)
+    ev = round(((bookmaker_odds / fair_odds) - 1) * 100, 2)
+    return fair_odds, ev
 
-    return p_home, p_draw, p_away
-
-# === БЛОК ОТРЕМАНИЙ РЕАЛЬНОГО xG ЗА ОСТАННІ 5 МАТЧІВ ===
-
-def get_team_last_5_xg(team_id):
-    """
-    Запитує останні 5 матчів команди через API-Football
-    і повертає (середній забитий xG, середній пропущений xG).
-    """
-    if not API_FOOTBALL_KEY or not team_id:
-        return 1.20, 1.20
-
-    url = f"https://v3.football.api-sports.io/fixtures?team={team_id}&last=5"
-    headers = {'x-apisports-key': API_FOOTBALL_KEY}
-    
-    try:
-        res = requests.get(url, headers=headers, timeout=10).json()
-        fixtures = res.get('response', [])
+def scan_all_22_leagues():
+    """Сканує всі 22 ліги та відсіює матчі за фільтрами кф і EV"""
+    for odds_league_key, fb_league_id in LEAGUES_MAP.items():
+        odds_url = f"https://api.the-odds-api.com/v4/sports/{odds_league_key}/odds/"
+        odds_res = requests.get(
+            odds_url,
+            params={
+                'apiKey': ODDS_API_KEY,
+                'regions': 'eu',
+                'markets': 'h2h'
+            },
+            timeout=10
+        ).json()
         
-        total_xg_for = 0.0
-        total_xg_against = 0.0
-        count = 0
-        
-        for fix in fixtures:
-            fixture_id = fix['fixture']['id']
-            stat_url = f"https://v3.football.api-sports.io/fixtures/statistics?fixture={fixture_id}"
-            stat_res = requests.get(stat_url, headers=headers, timeout=10).json()
+        if not isinstance(odds_res, list):
+            continue
             
-            teams_stat = stat_res.get('response', [])
-            if len(teams_stat) < 2:
+        for match in odds_res:
+            home_team = match['home_team']
+            away_team = match['away_team']
+            
+            # Отримання кращого коефіцієнта на П1 з букмекерів
+            bookmakers = match.get('bookmakers', [])
+            if not bookmakers:
                 continue
                 
-            for team_data in teams_stat:
-                current_team_id = team_data['team']['id']
-                xg_val = 0.0
-                for stat in team_data.get('statistics', []):
-                    if stat['type'] == 'expected_goals' and stat['value'] is not None:
-                        xg_val = float(stat['value'])
-                        break
-                        
-                if current_team_id == team_id:
-                    total_xg_for += xg_val
-                else:
-                    total_xg_against += xg_val
-            count += 1
+            # Беремо перший доступний кф на П1 (або шукаємо найвищий)
+            bm = bookmakers[0]
+            outcomes = bm['markets'][0]['outcomes']
+            bk_odds_home = next((o['price'] for o in outcomes if o['name'] == home_team), None)
             
-        if count == 0:
-            return 1.20, 1.20
-            
-        return total_xg_for / count, total_xg_against / count
-
-    except Exception as e:
-        logging.error(f"Помилка отримання xG для команди {team_id}: {e}")
-        return 1.20, 1.20
-
-def calculate_real_match_xg(home_team_id, away_team_id):
-    """
-    Перехресний розрахунок реального xG на основі останніх 5 ігор.
-    """
-    h_attack, h_defense = get_team_last_5_xg(home_team_id)
-    a_attack, a_defense = get_team_last_5_xg(away_team_id)
-    
-    # Атака господарів vs Захист гостей з помірним фактором поля (+3% / -3%)
-    real_xg_home = ((h_attack + a_defense) / 2.0) * 1.03
-    real_xg_away = ((a_attack + h_defense) / 2.0) * 0.97
-    
-    # Запобігання аномальним вилетам за межі розумного
-    real_xg_home = min(max(round(real_xg_home, 2), 0.40), 2.60)
-    real_xg_away = min(max(round(real_xg_away, 2), 0.30), 2.40)
-    
-    return real_xg_home, real_xg_away
-
-# === ЛОГІКА СКАНУВАННЯ З ХРОНОЛОГІЧНИМ СОРТУВАННЯМ ===
-
-def run_manual_scan():
-    if not ODDS_API_KEY:
-        send_telegram_message("❌ <b>Помилка:</b> Відсутній ODDS_API_KEY!")
-        return
-
-    send_telegram_message("🔍 <b>Запущено сканування (Real xG 5 Games + Poisson)...</b>")
-    
-    signals_data = [] 
-    now_utc = datetime.now(timezone.utc)
-    max_time_utc = now_utc + timedelta(hours=48)
-    requests_made = 0
-
-    for league in LEAGUES:
-        url = f"https://api.the-odds-api.com/v4/sports/{league}/odds/?apiKey={ODDS_API_KEY}&regions={REGIONS}&markets={MARKETS}"
-        try:
-            res = requests.get(url, timeout=10)
-            requests_made += 1
-            if res.status_code != 200:
-                continue
-            data = res.json()
-        except Exception:
-            continue
-
-        for match in data:
-            commence_time_str = match.get('commence_time')
-            if not commence_time_str: continue
-            
-            try:
-                match_time_utc = datetime.fromisoformat(commence_time_str.replace('Z', '+00:00'))
-                if not (now_utc <= match_time_utc <= max_time_utc): continue
-                match_time_kyiv = match_time_utc + timedelta(hours=3)
-                formatted_time = match_time_kyiv.strftime("%d.%m о %H:%M")
-            except Exception:
+            if not bk_odds_home:
                 continue
 
-            home = match.get('home_team')
-            away = match.get('away_team')
-            bookmakers = match.get('bookmakers', [])
+            # 1. ФІЛЬТР ПО КОЕФІЦІЄНТУ
+            if not (MIN_ODDS <= bk_odds_home <= MAX_ODDS):
+                continue
 
-            # ID команд беруться з відповідного джерела або маппінгу
-            home_team_id = match.get('home_team_id', 0)
-            away_team_id = match.get('away_team_id', 0)
+            # Розрахунок xG та EV
+            home_xg = get_team_xg_by_league(home_team, fb_league_id)
+            away_xg = get_team_xg_by_league(away_team, fb_league_id)
+            fair_odds, ev = calculate_ev(home_xg, away_xg, bk_odds_home)
 
-            # РЕАЛЬНИЙ xG ЗА 5 МАТЧІВ ЗАМІСТЬ ФАКТИЧНОГО ОЦІНЮВАННЯ ВІД КФ
-            xg_h, xg_a = calculate_real_match_xg(home_team_id, away_team_id)
+            # 2. ФІЛЬТР ПО EV
+            if ev is not None and ev >= MIN_EV:
+                print(f"🔥 ВАЛУЙ ЗНАЙДЕНО: {home_team} vs {away_team} | Кф БК: {bk_odds_home} | Справедливий кф: {fair_odds} | EV: +{ev}%")
 
-            # Перераховуємо ймовірності Пуассона з реальним xG
-            p_h, p_d, p_a = calculate_match_probabilities(xg_h, xg_a)
-
-            model_probs = {home: p_h, "Draw": p_d, away: p_a}
-
-            best_match_signal = None
-            max_signal_ev = -999.0
-            signal_key = None
-
-            # Шукаємо 1 найкращий валуй на матч
-            for bm in bookmakers:
-                bm_name = bm.get('title')
-                for mk in bm.get('markets', []):
-                    if mk.get('key') != 'h2h': continue
-                    for out in mk.get('outcomes', []):
-                        name = out.get('name')
-                        price = out.get('price')
-
-                        model_prob = model_probs.get(name, 0)
-                        if model_prob <= 0: continue
-
-                        ev = (price * model_prob - 1) * 100
-                        fair_odds = round(1.0 / model_prob, 2)
-
-                        if MIN_EV <= ev <= MAX_EV and MIN_ODDS <= price <= MAX_ODDS:
-                            cache_id = f"{home}_{away}_{name}_{bm_name}"
-                            
-                            if cache_id in sent_signals_cache:
-                                continue
-
-                            if ev > max_signal_ev:
-                                max_signal_ev = ev
-                                signal_key = cache_id
-                                best_match_signal = (
-                                    f"🎯 <b>TRUE POISSON VALUE BET (REAL xG)</b>\n\n"
-                                    f"⚽ <b>Матч:</b> {home} vs {away}\n"
-                                    f"📊 <b>Model xG (Last 5):</b> {xg_h} - {xg_a}\n"
-                                    f"📅 <b>Час:</b> {formatted_time} (Кв)\n"
-                                    f"🏆 <b>Ліга:</b> {league}\n"
-                                    f"📌 <b>Ставка:</b> {name}\n"
-                                    f"📈 <b>Коефіцієнт БК:</b> <code>{price}</code> ({bm_name})\n"
-                                    f"⚖️ <b>Справедливий кф:</b> {fair_odds} ({round(model_prob * 100, 1)}%)\n"
-                                    f"🔥 <b>Чистий EV:</b> +{round(ev, 2)}%"
-                                )
-
-            if best_match_signal and signal_key:
-                signals_data.append({
-                    'time': match_time_utc,
-                    'text': best_match_signal,
-                    'key': signal_key
-                })
-
-    if signals_data:
-        # Хронологічне сортування від найближчих матчів до пізніших
-        signals_data.sort(key=lambda x: x['time'])
-
-        for item in signals_data:
-            send_telegram_message(item['text'])
-            sent_signals_cache.add(item['key'])
-
-        send_telegram_message(f"✅ <b>Завершено!</b> Нових валуїв: {len(signals_data)}. Запитів API: {requests_made}")
-    else:
-        send_telegram_message(f"📭 <b>Завершено.</b> Нових валуїв не знайдено. Запитів API: {requests_made}")
-
-@bot.message_handler(commands=['scan'])
-def handle_scan_command(message):
-    if str(message.chat.id) != str(TELEGRAM_CHAT_ID):
-        return
-    t = Thread(target=run_manual_scan)
-    t.start()
-
-@bot.message_handler(commands=['start'])
-def handle_start(message):
-    send_telegram_message("🤖 <b>Бот готовий.</b> Напиши /scan для пошуку валуїв.")
-
-if __name__ == '__main__':
-    keep_alive()
-    bot.infinity_polling()
+if __name__ == "__main__":
+    scan_all_22_leagues()
