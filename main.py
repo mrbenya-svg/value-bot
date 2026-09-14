@@ -122,10 +122,26 @@ def run_scan_and_notify(chat_id):
                 params={'apiKey': ODDS_API_KEY, 'regions': 'eu', 'markets': 'h2h'},
                 timeout=10
             )
+
+            # Перевірка на помилки доступу або вичерпання лімітів
+            if res_raw.status_code in [401, 429]:
+                bot.send_message(
+                    chat_id,
+                    f"⚠️ <b>Помилка Odds API (Код {res_raw.status_code}):</b>\n"
+                    f"Вичерпано ліміт запитів або вказано невірний API Key.\n"
+                    f"<i>Деталі: {res_raw.text}</i>",
+                    parse_mode="HTML"
+                )
+                return
+
+            if res_raw.status_code != 200:
+                print(f"Помилка Odds API ({odds_league_key}): Статус {res_raw.status_code}")
+                continue
+
             odds_res = res_raw.json()
         except Exception as e:
-            print(f"Помилка Odds API ({odds_league_key}): {e}")
-            continue
+            bot.send_message(chat_id, f"❌ <b>Критична помилка мережі:</b> {e}", parse_mode="HTML")
+            return
 
         if not isinstance(odds_res, list) or not odds_res:
             continue
@@ -232,7 +248,27 @@ def run_scan_and_notify(chat_id):
 # ================================
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "Надішли 'скан' або /scan для запуску.")
+    bot.reply_to(message, "Надішли 'скан' або /scan для запуску.\nКоманда /quota покаже залишок ліміту API.")
+
+@bot.message_handler(commands=['quota'])
+def check_quota(message):
+    try:
+        res = requests.get(
+            "https://api.the-odds-api.com/v4/sports/",
+            params={'apiKey': ODDS_API_KEY},
+            timeout=5
+        )
+        remaining = res.headers.get('x-requests-remaining', 'Невідомо')
+        used = res.headers.get('x-requests-used', 'Невідомо')
+        
+        if res.status_code == 200:
+            msg = f"📊 <b>Статус Odds API:</b>\n\n✅ Використано запитів: <b>{used}</b>\n🔋 Залишилось запитів: <b>{remaining}</b>"
+        else:
+            msg = f"⚠️ Помилка ключа (Код {res.status_code}):\n{res.text}"
+            
+        bot.reply_to(message, msg, parse_mode="HTML")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка з'єднання: {e}")
 
 @bot.message_handler(func=lambda message: message.text.lower() in ['скан', '/scan'])
 def handle_scan_request(message):
