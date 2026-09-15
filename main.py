@@ -2,12 +2,13 @@ import os
 import math
 import requests
 import threading
+import time
 from datetime import datetime, timezone, timedelta
 from flask import Flask
 import telebot
 
 # ================================
-# 0. ВЕБ-СЕРВЕР ДЛЯ RENDER
+# 0. ВЕБ-СЕРВЕР ДЛЯ RENDER ТА KEEP-ALIVE
 # ================================
 app = Flask(__name__)
 
@@ -20,6 +21,19 @@ def run_flask():
     app.run(host='0.0.0.0', port=port, use_reloader=False)
 
 threading.Thread(target=run_flask, daemon=True).start()
+
+def keep_alive():
+    """Фоновий ping для запобігання 'засинанню' Render"""
+    port = os.environ.get("PORT", 10000)
+    url = f"http://127.0.0.1:{port}/"
+    while True:
+        time.sleep(600)  # Запит кожні 10 хвилин
+        try:
+            requests.get(url, timeout=10)
+        except Exception:
+            pass
+
+threading.Thread(target=keep_alive, daemon=True).start()
 
 # ================================
 # 1. КОНФІГУРАЦІЯ
