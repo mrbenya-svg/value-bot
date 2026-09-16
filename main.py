@@ -23,15 +23,22 @@ def run_flask():
 threading.Thread(target=run_flask, daemon=True).start()
 
 def keep_alive():
-    """Фоновий ping для запобігання 'засинанню' Render"""
-    port = os.environ.get("PORT", 10000)
-    url = f"http://127.0.0.1:{port}/"
+    """Фоновий ping через зовнішнє посилання Render для запобігання 'засинанню'"""
+    # Отримуємо URL з системних змінних Render або вказуємо прямий URL бота
+    render_url = os.environ.get("RENDER_EXTERNAL_URL", "https://value-bot.onrender.com")
+    
+    # Невелика затримка перед першим пігом, щоб Flask встиг стартувати
+    time.sleep(15) 
+    
     while True:
-        time.sleep(600)  # Запит кожні 10 хвилин
         try:
-            requests.get(url, timeout=10)
-        except Exception:
-            pass
+            # Запит йде через зовнішню мережу до балансувальника Render
+            response = requests.get(render_url, timeout=10)
+            print(f"⏰ [Keep-Alive] External ping sent. Status: {response.status_code}")
+        except Exception as e:
+            print(f"⚠️ [Keep-Alive] External ping error: {e}")
+            
+        time.sleep(600)  # Пінгуємо кожні 10 хвилин (600 секунд)
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
