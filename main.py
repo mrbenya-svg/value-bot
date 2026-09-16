@@ -4,6 +4,7 @@ import requests
 import threading
 import time
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from flask import Flask
 import telebot
 
@@ -24,21 +25,18 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 def keep_alive():
     """Фоновий ping через зовнішнє посилання Render для запобігання 'засинанню'"""
-    # Отримуємо URL з системних змінних Render або вказуємо прямий URL бота
     render_url = os.environ.get("RENDER_EXTERNAL_URL", "https://value-bot.onrender.com")
     
-    # Невелика затримка перед першим пігом, щоб Flask встиг стартувати
     time.sleep(15) 
     
     while True:
         try:
-            # Запит йде через зовнішню мережу до балансувальника Render
             response = requests.get(render_url, timeout=10)
             print(f"⏰ [Keep-Alive] External ping sent. Status: {response.status_code}")
         except Exception as e:
             print(f"⚠️ [Keep-Alive] External ping error: {e}")
             
-        time.sleep(600)  # Пінгуємо кожні 10 хвилин (600 секунд)
+        time.sleep(600)
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
@@ -50,7 +48,6 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
-# Фільтри коефіцієнтів та EV
 MIN_ODDS = 1.60
 MAX_ODDS = 3.40
 MIN_EV = 5.0
@@ -122,8 +119,10 @@ def calculate_full_poisson_model(avg_h, avg_d, avg_a):
 
 def format_match_time(iso_time_str: str) -> str:
     try:
-        dt = datetime.fromisoformat(iso_time_str.replace("Z", "+00:00"))
-        return dt.strftime("%d.%m о %H:%M")
+        # Перетворюємо час з ISO (UTC) у київський часовий пояс (Europe/Kyiv)
+        dt_utc = datetime.fromisoformat(iso_time_str.replace("Z", "+00:00"))
+        dt_kyiv = dt_utc.astimezone(ZoneInfo("Europe/Kyiv"))
+        return dt_kyiv.strftime("%d.%m о %H:%M")
     except Exception:
         return "Час невідомий"
 
@@ -144,7 +143,6 @@ def run_scan_and_notify(chat_id):
                 timeout=10
             )
 
-            # Перевірка на помилки доступу або вичерпання лімітів
             if res_raw.status_code in [401, 429]:
                 bot.send_message(
                     chat_id,
@@ -253,7 +251,6 @@ def run_scan_and_notify(chat_id):
                     )
                     valuable_matches.append({'match_time': match_dt, 'msg': msg})
 
-    # Сортування за часом початку (від найближчого)
     valuable_matches.sort(key=lambda item: item['match_time'])
 
     for val_item in valuable_matches:
