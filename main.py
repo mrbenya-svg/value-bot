@@ -51,7 +51,7 @@ bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 MIN_ODDS = 1.60
 MAX_ODDS = 3.40
 MIN_EV = 5.0
-MAX_HOURS_AHEAD = 48
+MAX_HOURS_AHEAD = 24
 
 LEAGUES_MAP = {
     "soccer_epl": "Англія: Прем'єр-ліга",
