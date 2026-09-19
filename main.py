@@ -119,7 +119,6 @@ def calculate_full_poisson_model(avg_h, avg_d, avg_a):
 
 def format_match_time(iso_time_str: str) -> str:
     try:
-        # Перетворюємо час з ISO (UTC) у київський часовий пояс (Europe/Kyiv)
         dt_utc = datetime.fromisoformat(iso_time_str.replace("Z", "+00:00"))
         dt_kyiv = dt_utc.astimezone(ZoneInfo("Europe/Kyiv"))
         return dt_kyiv.strftime("%d.%m о %H:%M")
@@ -294,4 +293,13 @@ def handle_scan_request(message):
 
 if __name__ == "__main__":
     print("🤖 Бот чекає команду 'скан'...")
-    bot.infinity_polling()
+    
+    # Видаляємо старий webhook перед запуском polling
+    try:
+        bot.remove_webhook()
+        print("✅ Webhook успішно видалено")
+    except Exception as e:
+        print(f"⚠️ Помилка скидання webhook: {e}")
+
+    # Запускаємо стійкий polling з автовідновленням
+    bot.infinity_polling(timeout=20, long_polling_timeout=10)
