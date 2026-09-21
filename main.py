@@ -85,6 +85,7 @@ LEAGUES_MAP = {
     "soccer_brazil_campeonato": "Бразилія: Серія А",
     "soccer_brazil_serie_b": "Бразилія: Серія Б",
     "soccer_paraguay_primera_division": "Парагвай: Прімера",
+    "soccer_paraguay_division_intermedia": "Парагвай: Дивізіон Інтермедіа", # Додано 30-ту лігу
     "soccer_colombia_categoria_primera_a": "Колумбія: Прімера А",
     "soccer_colombia_categoria_primera_b": "Колумбія: Прімера Б",
     "soccer_chile_camp_nacional": "Чилі: Прімера",
