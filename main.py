@@ -15,7 +15,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Value Bot is alive!", 200
+    return "Value Filter Bot 1 is alive!", 200
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -25,7 +25,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 def keep_alive():
     """Фоновий ping через зовнішнє посилання Render для запобігання 'засинанню'"""
-    render_url = os.environ.get("RENDER_EXTERNAL_URL", "https://value-bot.onrender.com")
+    render_url = os.environ.get("RENDER_EXTERNAL_URL", "https://value-bot-1.onrender.com")
     
     time.sleep(15) 
     
@@ -85,7 +85,7 @@ LEAGUES_MAP = {
     "soccer_brazil_campeonato": "Бразилія: Серія А",
     "soccer_brazil_serie_b": "Бразилія: Серія Б",
     "soccer_paraguay_primera_division": "Парагвай: Прімера",
-    "soccer_paraguay_division_intermedia": "Парагвай: Дивізіон Інтермедіа", # Додано 30-ту лігу
+    "soccer_paraguay_division_intermedia": "Парагвай: Дивізіон Інтермедіа",
     "soccer_colombia_categoria_primera_a": "Колумбія: Прімера А",
     "soccer_colombia_categoria_primera_b": "Колумбія: Прімера Б",
     "soccer_chile_camp_nacional": "Чилі: Прімера",
@@ -159,7 +159,7 @@ def format_match_time(iso_time_str: str) -> str:
         return "Час невідомий"
 
 # ================================
-# 3. СКАНУВАННЯ ТА ХРОНОЛОГІЧНЕ СОРТУВАННЯ
+# 3. СКАНУВАННЯ З ФІЛЬТРАЦІЄЮ МАТЧІВ
 # ================================
 def run_scan_and_notify(chat_id):
     bot.send_message(chat_id, f"🔎 <b>Запуск сканера ({len(LEAGUES_MAP)} турнірів)...</b>", parse_mode="HTML")
@@ -203,13 +203,15 @@ def run_scan_and_notify(chat_id):
             if commence_str:
                 try:
                     match_dt = datetime.fromisoformat(commence_str.replace("Z", "+00:00"))
-                    if match_dt - now_utc > timedelta(hours=MAX_HOURS_AHEAD):
+                    
+                    # Жорсткий фільтр: відсікаємо матчі, які ВЖЕ почалися або стартують пізніше ніж за 24 год
+                    if match_dt <= now_utc or match_dt - now_utc > timedelta(hours=MAX_HOURS_AHEAD):
                         continue
                 except Exception:
                     pass
 
             if not match_dt:
-                match_dt = now_utc + timedelta(days=99)
+                continue
 
             home_team = match['home_team']
             away_team = match['away_team']
@@ -289,7 +291,7 @@ def run_scan_and_notify(chat_id):
         bot.send_message(chat_id, val_item['msg'], parse_mode="HTML")
 
     if not valuable_matches:
-        bot.send_message(chat_id, "🏁 Завершено. Валуїв з кф 1.60-3.40 та EV >= 5.0% не знайдено.")
+        bot.send_message(chat_id, "🏁 Завершено. Валуїв за обраними критеріями не знайдено.")
     else:
         bot.send_message(chat_id, f"✅ Завершено. Знайдено валуйних сигналів: {len(valuable_matches)}")
 
@@ -298,7 +300,7 @@ def run_scan_and_notify(chat_id):
 # ================================
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "Надішли 'скан' або /scan для запуску.\nКоманда /quota покаже залишок ліміту API.")
+    bot.reply_to(message, "Надішли 'скан' або /scan для запуску сканування.\nКоманда /quota покаже залишок ліміту API.")
 
 @bot.message_handler(commands=['quota'])
 def check_quota(message):
@@ -325,14 +327,12 @@ def handle_scan_request(message):
     run_scan_and_notify(message.chat.id)
 
 if __name__ == "__main__":
-    print("🤖 Бот чекає команду 'скан'...")
+    print("🤖 Бот 1 чекає команду 'скан'...")
     
-    # Видаляємо старий webhook перед запуском polling
     try:
         bot.remove_webhook()
         print("✅ Webhook успішно видалено")
     except Exception as e:
         print(f"⚠️ Помилка скидання webhook: {e}")
 
-    # Запускаємо стійкий polling з автовідновленням
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
