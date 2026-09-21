@@ -54,6 +54,7 @@ MIN_EV = 5.0
 MAX_HOURS_AHEAD = 24
 
 LEAGUES_MAP = {
+    # --- Основні Європейські Ліги (22) ---
     "soccer_epl": "Англія: Прем'єр-ліга",
     "soccer_spain_la_liga": "Іспанія: Ла Ліга",
     "soccer_germany_bundesliga": "Німеччина: Бундесліга",
@@ -75,7 +76,26 @@ LEAGUES_MAP = {
     "soccer_poland_ekstraklasa": "Польща: Екстракляса",
     "soccer_greece_super_league": "Греція: Суперліга",
     "soccer_spain_segunda_division": "Іспанія: Сегунда",
-    "soccer_germany_bundesliga2": "Німеччина: Друга Бундесліга"
+    "soccer_germany_bundesliga2": "Німеччина: Друга Бундесліга",
+
+    # --- Нові додані турніри (17) ---
+    "soccer_brazil_campeonato": "Бразилія: Серія А",
+    "soccer_brazil_serie_b": "Бразилія: Серія Б",
+    "soccer_argentina_primera_division": "Аргентина: Примера",
+    "soccer_chile_camp_nacional": "Чилі: Примера",
+    "soccer_colombia_categoria_primera_a": "Колумбія: Примера А",
+    "soccer_mexico_ligamx": "Мексика: Ліга MX",
+    "soccer_usa_mls": "США: MLS",
+    "soccer_japan_j_league": "Японія: Джей-ліга",
+    "soccer_korea_k_league_1": "Південна Корея: К-Ліга 1",
+    "soccer_czech_republic_first_league": "Чехія: Перша ліга",
+    "soccer_finland_veikkausliiga": "Фінляндія: Вейккаусліга",
+    "soccer_italy_serie_b": "Італія: Серія Б",
+    "soccer_france_ligue_two": "Франція: Ліга 2",
+    "soccer_netherlands_eerste_divisie": "Нідерланди: Ерсте Дивізі",
+    "soccer_scotland_championship": "Шотландія: Чемпіоншип",
+    "soccer_denmark_1st_division": "Данія: 1-й дивізіон",
+    "soccer_sweden_superettan": "Швеція: Супереттан"
 }
 
 # ================================
@@ -129,7 +149,7 @@ def format_match_time(iso_time_str: str) -> str:
 # 3. СКАНУВАННЯ ТА ХРОНОЛОГІЧНЕ СОРТУВАННЯ
 # ================================
 def run_scan_and_notify(chat_id):
-    bot.send_message(chat_id, "🔎 <b>Запуск сканера (хронологічний порядок)...</b>", parse_mode="HTML")
+    bot.send_message(chat_id, f"🔎 <b>Запуск сканера ({len(LEAGUES_MAP)} турнірів)...</b>", parse_mode="HTML")
     
     valuable_matches = []
     now_utc = datetime.now(timezone.utc)
