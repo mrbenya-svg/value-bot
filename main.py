@@ -78,7 +78,7 @@ LEAGUES_MAP = {
     "soccer_spain_segunda_division": "Іспанія: Сегунда",
     "soccer_germany_bundesliga2": "Німеччина: Друга Бундесліга",
 
-    # --- Нові додані турніри (30) ---
+    # --- Нові додані турніри (27) ---
     "soccer_algeria_ligue_1": "Алжир: Дивізіон 1",
     "soccer_argentina_primera_division": "Аргентина: Прімера",
     "soccer_argentina_primera_b": "Аргентина: Прімера Б Насьональ",
@@ -105,10 +105,7 @@ LEAGUES_MAP = {
     "soccer_morocco_pro_league": "Марокко: Ботола Про",
     "soccer_israel_liga_leumit": "Ізраїль: Ліга Леуміт",
     "soccer_czech_republic_first_league": "Чехія: Перша ліга",
-    "soccer_uefa_nations_league": "Ліга націй УЄФА",
-    "soccer_gulf_cup_of_nations": "Кубок націй перської затоки",
-    "soccer_africa_cup_of_nations": "Кубок африканських націй",
-    "soccer_concacaf_nations_league": "Ліга націй КОНКАКАФ"
+    "soccer_uefa_nations_league": "Ліга націй УЄФА"
 }
 
 # ================================
