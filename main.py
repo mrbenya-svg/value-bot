@@ -54,6 +54,12 @@ MIN_EV = 5.0
 MAX_HOURS_AHEAD = 24
 
 LEAGUES_MAP = {
+    # --- Єврокубки (Додано) ---
+    "soccer_uefa_champions_league": "Ліга чемпіонів УЄФА",
+    "soccer_uefa_europa_league": "Ліга Європи УЄФА",
+    "soccer_uefa_europa_conference_league": "Ліга конференцій УЄФА",
+    "soccer_uefa_nations_league": "Ліга націй УЄФА",
+
     # --- Основні Європейські Ліги (22) ---
     "soccer_epl": "Англія: Прем'єр-ліга",
     "soccer_spain_la_liga": "Іспанія: Ла Ліга",
@@ -78,7 +84,7 @@ LEAGUES_MAP = {
     "soccer_spain_segunda_division": "Іспанія: Сегунда",
     "soccer_germany_bundesliga2": "Німеччина: Друга Бундесліга",
 
-    # --- Нові додані турніри (27) ---
+    # --- Інші турніри ---
     "soccer_algeria_ligue_1": "Алжир: Дивізіон 1",
     "soccer_argentina_primera_division": "Аргентина: Прімера",
     "soccer_argentina_primera_b": "Аргентина: Прімера Б Насьональ",
@@ -105,7 +111,6 @@ LEAGUES_MAP = {
     "soccer_morocco_pro_league": "Марокко: Ботола Про",
     "soccer_israel_liga_leumit": "Ізраїль: Ліга Леуміт",
     "soccer_czech_republic_first_league": "Чехія: Перша ліга",
-    "soccer_uefa_nations_league": "Ліга націй УЄФА"
 }
 
 # ================================
@@ -201,7 +206,6 @@ def run_scan_and_notify(chat_id):
                 try:
                     match_dt = datetime.fromisoformat(commence_str.replace("Z", "+00:00"))
                     
-                    # Жорсткий фільтр: відсікаємо матчі, які ВЖЕ почалися або стартують пізніше ніж за 24 год
                     if match_dt <= now_utc or match_dt - now_utc > timedelta(hours=MAX_HOURS_AHEAD):
                         continue
                 except Exception:
@@ -297,39 +301,4 @@ def run_scan_and_notify(chat_id):
 # ================================
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "Надішли 'скан' або /scan для запуску сканування.\nКоманда /quota покаже залишок ліміту API.")
-
-@bot.message_handler(commands=['quota'])
-def check_quota(message):
-    try:
-        res = requests.get(
-            "https://api.the-odds-api.com/v4/sports/",
-            params={'apiKey': ODDS_API_KEY},
-            timeout=5
-        )
-        remaining = res.headers.get('x-requests-remaining', 'Невідомо')
-        used = res.headers.get('x-requests-used', 'Невідомо')
-        
-        if res.status_code == 200:
-            msg = f"📊 <b>Статус Odds API:</b>\n\n✅ Використано запитів: <b>{used}</b>\n🔋 Залишилось запитів: <b>{remaining}</b>"
-        else:
-            msg = f"⚠️ Помилка ключа (Код {res.status_code}):\n{res.text}"
-            
-        bot.reply_to(message, msg, parse_mode="HTML")
-    except Exception as e:
-        bot.reply_to(message, f"❌ Помилка з'єднання: {e}")
-
-@bot.message_handler(func=lambda message: message.text.lower() in ['скан', '/scan'])
-def handle_scan_request(message):
-    run_scan_and_notify(message.chat.id)
-
-if __name__ == "__main__":
-    print("🤖 Бот 1 чекає команду 'скан'...")
-    
-    try:
-        bot.remove_webhook()
-        print("✅ Webhook успішно видалено")
-    except Exception as e:
-        print(f"⚠️ Помилка скидання webhook: {e}")
-
-    bot.infinity_polling(timeout=20, long_polling_timeout=10)
+    bot.reply
