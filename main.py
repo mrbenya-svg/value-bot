@@ -26,16 +26,12 @@ threading.Thread(target=run_flask, daemon=True).start()
 def keep_alive():
     """Фоновий ping через зовнішнє посилання Render для запобігання 'засинанню'"""
     render_url = os.environ.get("RENDER_EXTERNAL_URL", "https://value-bot-1.onrender.com")
-    
     time.sleep(15) 
-    
     while True:
         try:
-            response = requests.get(render_url, timeout=10)
-            print(f"⏰ [Keep-Alive] External ping sent. Status: {response.status_code}")
-        except Exception as e:
-            print(f"⚠️ [Keep-Alive] External ping error: {e}")
-            
+            requests.get(render_url, timeout=10)
+        except Exception:
+            pass
         time.sleep(600)
 
 threading.Thread(target=keep_alive, daemon=True).start()
@@ -301,4 +297,39 @@ def run_scan_and_notify(chat_id):
 # ================================
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply
+    bot.reply_to(message, "Надішли 'скан' або /scan для запуску сканування.\nКоманда /quota покаже залишок ліміту API.")
+
+@bot.message_handler(commands=['quota'])
+def check_quota(message):
+    try:
+        res = requests.get(
+            "https://api.the-odds-api.com/v4/sports/",
+            params={'apiKey': ODDS_API_KEY},
+            timeout=5
+        )
+        remaining = res.headers.get('x-requests-remaining', 'Невідомо')
+        used = res.headers.get('x-requests-used', 'Невідомо')
+        
+        if res.status_code == 200:
+            msg = f"📊 <b>Статус Odds API:</b>\n\n✅ Використано запитів: <b>{used}</b>\n🔋 Залишилось запитів: <b>{remaining}</b>"
+        else:
+            msg = f"⚠️ Помилка ключа (Код {res.status_code}):\n{res.text}"
+            
+        bot.reply_to(message, msg, parse_mode="HTML")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка з'єднання: {e}")
+
+@bot.message_handler(func=lambda message: message.text.lower() in ['скан', '/scan'])
+def handle_scan_request(message):
+    run_scan_and_notify(message.chat.id)
+
+if __name__ == "__main__":
+    print("🤖 Бот 1 чекає команду 'скан'...")
+    
+    try:
+        bot.remove_webhook()
+        print("✅ Webhook успішно видалено")
+    except Exception as e:
+        print(f"⚠️ Помилка скидання webhook: {e}")
+
+    bot.infinity_polling(timeout=20, long_polling_timeout=10)
