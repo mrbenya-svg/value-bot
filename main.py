@@ -50,13 +50,13 @@ MIN_EV = 5.0
 MAX_HOURS_AHEAD = 24
 
 LEAGUES_MAP = {
-    # --- Єврокубки (Додано) ---
+    # --- Єврокубки ---
     "soccer_uefa_champions_league": "Ліга чемпіонів УЄФА",
     "soccer_uefa_europa_league": "Ліга Європи УЄФА",
     "soccer_uefa_europa_conference_league": "Ліга конференцій УЄФА",
     "soccer_uefa_nations_league": "Ліга націй УЄФА",
 
-    # --- Основні Європейські Ліги (22) ---
+    # --- Основні Європейські Ліги ---
     "soccer_epl": "Англія: Прем'єр-ліга",
     "soccer_spain_la_liga": "Іспанія: Ла Ліга",
     "soccer_germany_bundesliga": "Німеччина: Бундесліга",
@@ -80,33 +80,43 @@ LEAGUES_MAP = {
     "soccer_spain_segunda_division": "Іспанія: Сегунда",
     "soccer_germany_bundesliga2": "Німеччина: Друга Бундесліга",
 
-    # --- Інші турніри ---
-    "soccer_algeria_ligue_1": "Алжир: Дивізіон 1",
+    # --- Нові додані регіональні та європейські ліги ---
+    "soccer_ukraine_premier_league": "Україна: Прем'єр-ліга",
+    "soccer_poland_i_liga": "Польща: Дивізіон 1",
+    "soccer_romania_liga_1": "Румунія: Суперліга",
+    "soccer_croatia_hnl": "Хорватія: ХФЛ",
+    "soccer_serbia_superliga": "Сербія: Суперліга",
+    "soccer_hungary_nb_i": "Угорщина: НБ І",
+    "soccer_slovakia_super_liga": "Словаччина: Ніке Ліга",
+    "soccer_slovenia_prva_liga": "Словенія: Перша ліга",
+    "soccer_bulgaria_first_league": "Болгарія: Перша ліга",
+    "soccer_cyprus_first_div": "Кіпр: Ліга Кіпру",
+    "soccer_turkey_tff_first_league": "Туреччина: 1 Ліга",
+    "soccer_norway_first_div": "Норвегія: Обос Ліга",
+    "soccer_spain_primera_rfef": "Іспанія: Прімера КІФФ",
+
+    # --- Американські / Інші ліги ---
     "soccer_argentina_primera_division": "Аргентина: Прімера",
-    "soccer_argentina_primera_b": "Аргентина: Прімера Б Насьональ",
     "soccer_brazil_campeonato": "Бразилія: Серія А",
     "soccer_brazil_serie_b": "Бразилія: Серія Б",
-    "soccer_paraguay_primera_division": "Парагвай: Прімера",
-    "soccer_paraguay_division_intermedia": "Парагвай: Дивізіон Інтермедіа",
-    "soccer_colombia_categoria_primera_a": "Колумбія: Прімера А",
-    "soccer_colombia_categoria_primera_b": "Колумбія: Прімера Б",
-    "soccer_chile_camp_nacional": "Чилі: Прімера",
     "soccer_france_ligue_two": "Франція: Ліга 2",
-    "soccer_france_national": "Франція: Ліга 3 (Насьональ)",
-    "soccer_germany_3_liga": "Німеччина: 3-тя Ліга",
     "soccer_italy_serie_b": "Італія: Серія Б",
     "soccer_usa_mls": "США: МЛС",
     "soccer_mexico_ligamx": "Мексика: Ліга MX",
     "soccer_netherlands_eerste_divisie": "Нідерланди: Еесте Дивізі",
     "soccer_korea_k_league_1": "Південна Корея: К-Ліга 1",
     "soccer_finland_veikkausliiga": "Фінляндія: Вейккаусліга",
+    "soccer_japan_j_league": "Японія: Джей-ліга",
+    "soccer_czech_republic_first_league": "Чехія: Перша ліга",
+
+    # --- Ті, що залишені на перевірку (під питанням в API) ---
     "soccer_scotland_championship": "Шотландія: Чемпіоншип",
+    "soccer_argentina_primera_b": "Аргентина: Прімера Б Насьональ",
+    "soccer_france_national": "Франція: Ліга 3 (Насьональ)",
+    "soccer_germany_3_liga": "Німеччина: 3-тя Ліга",
     "soccer_denmark_1st_division": "Данія: 1-й дивізіон",
     "soccer_sweden_superettan": "Швеція: Супереттан",
-    "soccer_japan_j_league": "Японія: Джей-ліга",
-    "soccer_morocco_pro_league": "Марокко: Ботола Про",
     "soccer_israel_liga_leumit": "Ізраїль: Ліга Леуміт",
-    "soccer_czech_republic_first_league": "Чехія: Перша ліга",
 }
 
 # ================================
