@@ -51,72 +51,59 @@ MAX_HOURS_AHEAD = 24
 
 LEAGUES_MAP = {
     # --- Єврокубки ---
-    "soccer_uefa_champions_league": "Ліга чемпіонів УЄФА",
+    "soccer_uefa_champs_league": "Ліга чемпіонів УЄФА",
     "soccer_uefa_europa_league": "Ліга Європи УЄФА",
-    "soccer_uefa_europa_conference_league": "Ліга конференцій УЄФА",
+    "soccer_uefa_europa_conference_league": "Ліга конференцій УЄФА"
     "soccer_uefa_nations_league": "Ліга націй УЄФА",
 
-    # --- Основні Європейські Ліги ---
+    # --- Топ-5 Європейських чемпіонатів ---
     "soccer_epl": "Англія: Прем'єр-ліга",
     "soccer_spain_la_liga": "Іспанія: Ла Ліга",
     "soccer_germany_bundesliga": "Німеччина: Бундесліга",
     "soccer_italy_serie_a": "Італія: Серія А",
     "soccer_france_ligue_one": "Франція: Ліга 1",
-    "soccer_england_championship": "Англія: Чемпіоншип",
+
+    # --- Другі та нижчі дивізіони Топ-країн ---
+    "soccer_efl_champ": "Англія: Чемпіоншип",
     "soccer_england_league1": "Англія: Перша ліга",
     "soccer_england_league2": "Англія: Друга ліга",
+    "soccer_england_efl_cup": "Англія: Кубок ліги",
+    "soccer_spain_segunda_division": "Іспанія: Сегунда",
+    "soccer_germany_bundesliga2": "Німеччина: Друга Бундесліга",
+    "soccer_germany_liga3": "Німеччина: 3-тя Ліга",
+    "soccer_germany_dfb_pokal": "Німеччина: Кубок (DFB-Pokal)",
+    "soccer_italy_serie_b": "Італія: Серія Б",
+    "soccer_france_ligue_two": "Франція: Ліга 2",
+
+    # --- Інші Європейські чемпіонати ---
     "soccer_netherlands_eredivisie": "Нідерланди: Ередивізі",
     "soccer_portugal_primeira_liga": "Португалія: Прімейра",
     "soccer_turkey_super_league": "Туреччина: Суперліга",
     "soccer_belgium_first_div": "Бельгія: Про-ліга",
-    "soccer_scotland_premier_league": "Шотландія: Прем'єр-ліга",
+    "soccer_spl": "Шотландія: Прем'єр-ліга",
     "soccer_austria_bundesliga": "Австрія: Бундесліга",
     "soccer_switzerland_superleague": "Швейцарія: Суперліга",
     "soccer_denmark_superliga": "Данія: Суперліга",
     "soccer_norway_eliteserien": "Норвегія: Елітсеріен",
     "soccer_sweden_allsvenskan": "Швеція: Аллсвенскан",
+    "soccer_sweden_superettan": "Швеція: Супереттан",
     "soccer_poland_ekstraklasa": "Польща: Екстракляса",
     "soccer_greece_super_league": "Греція: Суперліга",
-    "soccer_spain_segunda_division": "Іспанія: Сегунда",
-    "soccer_germany_bundesliga2": "Німеччина: Друга Бундесліга",
+    "soccer_finland_veikkausliiga": "Фінляндія: Вейккаусліга",
+    "soccer_league_of_ireland": "Ірландія: Прем'єр-дивізіон",
 
-    # --- Нові додані регіональні та європейські ліги ---
-    "soccer_ukraine_premier_league": "Україна: Прем'єр-ліга",
-    "soccer_poland_i_liga": "Польща: Дивізіон 1",
-    "soccer_romania_liga_1": "Румунія: Суперліга",
-    "soccer_croatia_hnl": "Хорватія: ХФЛ",
-    "soccer_serbia_superliga": "Сербія: Суперліга",
-    "soccer_hungary_nb_i": "Угорщина: НБ І",
-    "soccer_slovakia_super_liga": "Словаччина: Ніке Ліга",
-    "soccer_slovenia_prva_liga": "Словенія: Перша ліга",
-    "soccer_bulgaria_first_league": "Болгарія: Перша ліга",
-    "soccer_cyprus_first_div": "Кіпр: Ліга Кіпру",
-    "soccer_turkey_tff_first_league": "Туреччина: 1 Ліга",
-    "soccer_norway_first_div": "Норвегія: Обос Ліга",
-    "soccer_spain_primera_rfef": "Іспанія: Прімера КІФФ",
-
-    # --- Американські / Інші ліги ---
+    # --- Америка та Азія ---
+    "soccer_usa_mls": "США: МЛС",
+    "soccer_mexico_ligamx": "Мексика: Ліга MX",
     "soccer_argentina_primera_division": "Аргентина: Прімера",
     "soccer_brazil_campeonato": "Бразилія: Серія А",
     "soccer_brazil_serie_b": "Бразилія: Серія Б",
-    "soccer_france_ligue_two": "Франція: Ліга 2",
-    "soccer_italy_serie_b": "Італія: Серія Б",
-    "soccer_usa_mls": "США: МЛС",
-    "soccer_mexico_ligamx": "Мексика: Ліга MX",
-    "soccer_netherlands_eerste_divisie": "Нідерланди: Еесте Дивізі",
-    "soccer_korea_k_league_1": "Південна Корея: К-Ліга 1",
-    "soccer_finland_veikkausliiga": "Фінляндія: Вейккаусліга",
+    "soccer_chile_campeonato": "Чилі: Прімера",
+    "soccer_conmebol_copa_libertadores": "Кубок Лібертадорес",
+    "soccer_conmebol_copa_sudamericana": "Південноамериканський кубок",
     "soccer_japan_j_league": "Японія: Джей-ліга",
-    "soccer_czech_republic_first_league": "Чехія: Перша ліга",
-
-    # --- Ті, що залишені на перевірку (під питанням в API) ---
-    "soccer_scotland_championship": "Шотландія: Чемпіоншип",
-    "soccer_argentina_primera_b": "Аргентина: Прімера Б Насьональ",
-    "soccer_france_national": "Франція: Ліга 3 (Насьональ)",
-    "soccer_germany_3_liga": "Німеччина: 3-тя Ліга",
-    "soccer_denmark_1st_division": "Данія: 1-й дивізіон",
-    "soccer_sweden_superettan": "Швеція: Супереттан",
-    "soccer_israel_liga_leumit": "Ізраїль: Ліга Леуміт",
+    "soccer_australia_aleague": "Австралія: А-Ліга",
+    "soccer_saudi_arabia_pro_league": "Саудівська Аравія: Про-ліга"
 }
 
 # ================================
