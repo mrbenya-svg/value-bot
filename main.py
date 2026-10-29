@@ -53,7 +53,7 @@ LEAGUES_MAP = {
     # --- Єврокубки ---
     "soccer_uefa_champs_league": "Ліга чемпіонів УЄФА",
     "soccer_uefa_europa_league": "Ліга Європи УЄФА",
-    "soccer_uefa_europa_conference_league": "Ліга конференцій УЄФА"
+    "soccer_uefa_europa_conference_league": "Ліга конференцій УЄФА",
     "soccer_uefa_nations_league": "Ліга націй УЄФА",
 
     # --- Топ-5 Європейських чемпіонатів ---
@@ -63,12 +63,13 @@ LEAGUES_MAP = {
     "soccer_italy_serie_a": "Італія: Серія А",
     "soccer_france_ligue_one": "Франція: Ліга 1",
 
-    # --- Другі та нижчі дивізіони Топ-країн ---
+    # --- Другі та нижчі дивізіони Топ-країн та Кубки ---
     "soccer_efl_champ": "Англія: Чемпіоншип",
     "soccer_england_league1": "Англія: Перша ліга",
     "soccer_england_league2": "Англія: Друга ліга",
     "soccer_england_efl_cup": "Англія: Кубок ліги",
     "soccer_spain_segunda_division": "Іспанія: Сегунда",
+    "soccer_spain_copa_del_rey": "Іспанія: Кубок Короля",
     "soccer_germany_bundesliga2": "Німеччина: Друга Бундесліга",
     "soccer_germany_liga3": "Німеччина: 3-тя Ліга",
     "soccer_germany_dfb_pokal": "Німеччина: Кубок (DFB-Pokal)",
@@ -92,7 +93,7 @@ LEAGUES_MAP = {
     "soccer_finland_veikkausliiga": "Фінляндія: Вейккаусліга",
     "soccer_league_of_ireland": "Ірландія: Прем'єр-дивізіон",
 
-    # --- Америка та Азія ---
+    # --- Америка, Азія та інші ---
     "soccer_usa_mls": "США: МЛС",
     "soccer_mexico_ligamx": "Мексика: Ліга MX",
     "soccer_argentina_primera_division": "Аргентина: Прімера",
@@ -103,7 +104,9 @@ LEAGUES_MAP = {
     "soccer_conmebol_copa_sudamericana": "Південноамериканський кубок",
     "soccer_japan_j_league": "Японія: Джей-ліга",
     "soccer_australia_aleague": "Австралія: А-Ліга",
-    "soccer_saudi_arabia_pro_league": "Саудівська Аравія: Про-ліга"
+    "soccer_saudi_arabia_pro_league": "Саудівська Аравія: Про-ліга",
+    "soccer_china_superleague": "Китай: Суперліга",
+    "soccer_russia_premier_league": "Росія: Прем'єр-ліга"
 }
 
 # ================================
