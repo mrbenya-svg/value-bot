@@ -105,8 +105,7 @@ LEAGUES_MAP = {
     "soccer_japan_j_league": "Японія: Джей-ліга",
     "soccer_australia_aleague": "Австралія: А-Ліга",
     "soccer_saudi_arabia_pro_league": "Саудівська Аравія: Про-ліга",
-    "soccer_china_superleague": "Китай: Суперліга",
-    "soccer_russia_premier_league": "Росія: Прем'єр-ліга"
+    "soccer_china_superleague": "Китай: Суперліга"
 }
 
 # ================================
